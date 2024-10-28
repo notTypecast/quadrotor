@@ -118,9 +118,15 @@ Since our model uses rotor speeds as the control input, those need to be convert
 
 $$\Large
     \begin{align}
-        \begin{equation*}
-            \mathbf{F}_b = \mathbf{R}^T \begin{bmatrix} 0 \\ 0 \\ -mg \end{bmatrix} + \begin{bmatrix} 0 & 0 & 0 & 0 \\ 0 & 0 & 0 & 0 \\ K_f & K_f & K_f & K_f \end{bmatrix}\mathbf{c}
-        \end{equation*}
+        \mathbf{F}_b = \mathbf{R}^T \begin{bmatrix}
+        0\\
+        0\\
+        -mg
+        \end{bmatrix} + \begin{bmatrix}
+        0 & 0 & 0 & 0\\
+        0 & 0 & 0 & 0\\
+        K_f & K_f & K_f & K_f
+        \end{bmatrix}\mathbf{c}
     \end{align}
 $$
 
@@ -130,9 +136,11 @@ Where:
 
 $$\Large
     \begin{align}
-        \begin{equation*}
-            \mathbf{\tau}_b = \begin{bmatrix} \ell K_f(c_2 - c_4) \\ \ell K_f(c_3 - c_1) \\ K_t(c_1 - c_2 + c_3 - c_4) \end{bmatrix}
-        \end{equation*}
+        \mathbf{\tau}_b = \begin{bmatrix}
+        \ell K_f(c_2 - c_4)\\
+        \ell K_f(c_3 - c_1)\\
+        K_t(c_1 - c_2 + c_3 - c_4)
+        \end{bmatrix}
     \end{align}
 $$
 
@@ -144,13 +152,9 @@ Once the values for thrust and torque have been calculated, we can calculate the
 
 $$\Large
     \begin{align}
-        \begin{equation*}
-            \dot{\mathbf{u}}_b = \frac{1}{m}\mathbf{F}_b - \mathbf{\omega}_b \times \mathbf{u}_b
-        \end{equation*}
-        \\
-        \begin{equation*}
-            \dot{\mathbf{\omega}}_b = I_m^{-1}(\mathbf{\tau}_b - \mathbf{\omega}_b \times I_m \mathbf{\omega}_b)
-        \end{equation*}
+    \dot{\mathbf{u}}_b = \frac{1}{m}\mathbf{F}_b - \mathbf{\omega}_b \times \mathbf{u}_b
+    \\
+    \dot{\mathbf{\omega}}_b = I_m^{-1}(\mathbf{\tau}_b - \mathbf{\omega}_b \times I_m \mathbf{\omega}_b)
     \end{align}
 $$
 
@@ -175,7 +179,11 @@ As for the orientation:
 
 $$\Large
     \begin{align}
-        \dot{\mathbf{q}} = \frac{1}{2} \begin{bmatrix} -x & -y & -z \\ w & -z & y \\ z & w & -x \\ -y & x & w \end{bmatrix} \mathbf{\omega}_b
+        \dot{\mathbf{q}} = \frac{1}{2} \begin{bmatrix}
+        -x & -y & -z\\
+        w & -z & y\\
+        z & w & -x\\
+        -y & x & w \end{bmatrix} \mathbf{\omega}_b
     \end{align}
 $$
 
