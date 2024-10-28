@@ -1,4 +1,4 @@
-build/main_cem
-build/main_num
+build/*
 .vscode/
 TODO.txt
+variables.sh

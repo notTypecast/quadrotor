@@ -1,11 +1,15 @@
-# Combining a dynamic model with a learned model for Planar Quadrotor control
+# Combining a dynamic model with a learned model for Quadrotor control
 This repository implements the following:
 * A simulator for a planar quadrotor system. The simulation only includes gravity, as well as two forces acting on the PQ, one on each rotor, perpendicular to the length of the PQ.
-* An optimizer, utlizing the CEM algorithm to control the PQ and lead it to a specified position.
+* A simulator for a quadrotor system. Similarly, the simulator includes gravity, as well as the four rotor speeds. The forces and torques are calculated by multiplying specific constants $K_f$ and $K_t$ with the rotor speeds.
+* An optimizer, utlizing the CEM algorithm to control the PQ and lead it to a specified position. This is implemented for the planar quadrotor only.
+* An optimizer, utilizing numerical optimization using CasADi to control the quadrotor and lead it to a specified position. This is implemented for both the 2D and the 3D quadrotors.
+* A symbolic neural network, created using CasADi.
 
+# Planar Quadrotor
 ## Simulation
 ### Simulator
-The simulator is located at `src/sim/PlanarQuadrotor.hpp`. The `PlanarQuadrotor` class initializes a new PQ with the given mass, moment of inertia and length. The PQ's initial position is $(0, 0)$.
+The planar quadrotor simulator is located at `src/sim/PlanarQuadrotor.hpp`. The `PlanarQuadrotor` class initializes a new PQ with the given mass, moment of inertia and length. The PQ's initial position is $(0, 0)$.
 
 Using the `update` method, the system is integrated for a given time step, using the provided controls (forces for each rotor). The controls are considered constant for that time step.
 
@@ -88,3 +92,97 @@ Note that, as seen in $(1)$, the dynamic model only uses the angular position va
 In this repository, a neural network is used to learn this difference. We use the linked library `simple_nn` to initialize a neural network and train it using an episodic approach. This consists of running the simulation and optimization as-is for `n` steps, which make up an episode. We then train the neural network using all collected data during the episode. Following this, we repeat the process again for `m` episodes, or until the change in error between episodes is smaller than a specific threshold value.
 
 This entire process is repeated for `k` runs. We do this to collect data for multiple runs and get a mean error value per step per episode.
+
+### Numerical optimization
+Instead of using CEM to calculate the optimal controls, there is also the option to use numerical optimization. This is implemented using CasADi. The dynamic model has been implemented symbolically, allowing for optimization of the control forces based on the given dynamics.
+
+Additionally, using the symbolic neural network, a learned model can be trained similarly to the above, to learn differences between the actual and the known dynamics.
+
+# Quadrotor
+## Simulation
+### Simulator
+The equivalent simulator for the quadrotor is located at `src/sim/Quadrotor.hpp`. This operates similarly to the PQ, with the expected differences found in 3 dimensions. The moment of inertia is represented by a $3x3$ inertia matrix. Optional parameters include the constants $K_f$ and $K_t$.
+
+It should be noted that orientation in 3 dimensions is represented using a unit quaternion. As such, the quadrotor state consists of a 13-dimensional vector, which includes the linear position (size 3), the quaternion (size 4), the linear velocity (size 3) and the angular velocity (size 3).
+
+Specifically, the position and orientation are kept in world frame, but the velocity and angular velocity are kept in body frame.
+
+### Visualizer
+There is currently no visualizer for the 3D quadrotor system. As such, states are simply printed to the terminal.
+
+## Optimization
+### Dynamic model
+As mentioned, only numerical optimization is implemented with the 3D quadrotor system. The dynamics for the 3D quadrotor are slightly more complicated than those of the planar quadrotor.
+
+Since our model uses rotor speeds as the control input, those need to be converted to thrust and torque, before they can be used to calculate acceleration. This is generally done by multiplying with constants $K_f$ and $K_t$. As such, to calculate the total thrust and torque, in the body frame, we use the below equations.
+
+$$\Large
+    \begin{align}
+        \begin{equation*}
+            \mathbf{F}_b = \mathbf{R}^T \begin{bmatrix} 0 \\ 0 \\ -mg \end{bmatrix} + \begin{bmatrix} 0 & 0 & 0 & 0 \\ 0 & 0 & 0 & 0 \\ K_f & K_f & K_f & K_f \end{bmatrix}\mathbf{c}
+        \end{equation*}
+    \end{align}
+$$
+
+Where:
+* $\mathbf{R}$ is the rotation matrix, derived from the quaternion representing the state of the quadrotor.
+* $\mathbf{c}$ is a vector of size 4, containing the rotor speeds.
+
+$$\Large
+    \begin{align}
+        \begin{equation*}
+            \mathbf{\tau}_b = \begin{bmatrix} \ell K_f(c_2 - c_4) \\ \ell K_f(c_3 - c_1) \\ K_t(c_1 - c_2 + c_3 - c_4) \end{bmatrix}
+        \end{equation*}
+    \end{align}
+$$
+
+Where:
+* $c_i$ are the rotor speeds.
+* $\ell$ is the length from the center of the quadrotor to each rotor.
+
+Once the values for thrust and torque have been calculated, we can calculate the linear and angular acceleration using the following formulas.
+
+$$\Large
+    \begin{align}
+        \begin{equation*}
+            \dot{\mathbf{u}}_b = \frac{1}{m}\mathbf{F}_b - \mathbf{\omega}_b \times \mathbf{u}_b
+        \end{equation*}
+        \\
+        \begin{equation*}
+            \dot{\mathbf{\omega}}_b = I_m^{-1}(\mathbf{\tau}_b - \mathbf{\omega}_b \times I_m \mathbf{\omega}_b)
+        \end{equation*}
+    \end{align}
+$$
+
+Where:
+* $\mathbf{u}_b$ is the linear velocity vector.
+* $\mathbf{\omega}_b$ is the angular velocity vector.
+* $I_m$ is the inertia matrix of the quadrotor.
+
+It should be added that at this point, in the planar quadrotor version, we would simply integrate using the calculated acceleration. In this case, however, there are still two issues. Firstly, both of these accelerations are in the body frame, but the position and orientation are in the world frame. Therefore, after integrating the velocities, we need to convert to world frame in order to integrate the position and orientation. Additionally, our orientation is kept as a quaternion, so we need to update it according to this angular acceleration.
+
+Contrary to the planar quadrotor version, we perform semi-implicit Euler integration. As such, we update the quadrotor velocity first, after which we use the updated velocity to integrate the position for the given timespan.
+
+$$\Large
+    \begin{align}
+        \mathbf{u}_w = \mathbf{R}\mathbf{u}_b
+    \end{align}
+$$
+
+To get the world frame linear velocity, all that is needed is to multiply it from the left by the rotation matrix. We then use this velocity to integrate the linear position.
+
+As for the orientation:
+
+$$\Large
+    \begin{align}
+        \dot{\mathbf{q}} = \frac{1}{2} \begin{bmatrix} -x & -y & -z \\ w & -z & y \\ z & w & -x \\ -y & x & w \end{bmatrix} \mathbf{\omega}_b
+    \end{align}
+$$
+
+Where:
+* $q = \begin{bmatrix} w & x & y & z \end{bmatrix}^T$ is the quaternion representing the orientation.
+
+Using $\dot{\mathbf{q}}$, we can integrate the orientation quaternion. Note that the above formula requires that the quaternion be a unit quaternion, but the produced quaternion after integration will not be a unit quaternion. As such, the produced quaternion must then be normalized.
+
+### Learned model
+The learned model works in the same way as in the planar quadrotor version. The only difference is that here, the input is a 17-dimensional vector (13 for the state and 4 for the input controls) and the output is a 6-dimensional vector (3 for linear and 3 for angular acceleration.)

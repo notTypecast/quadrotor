@@ -31,7 +31,7 @@ namespace pq
         {
             namespace Sim
             {
-                constexpr double dt = 0.05;                 // simulation time step
+                constexpr double dt = 0.05;                // simulation time step
                 constexpr bool sync_with_real_time = true; // whether to sync simulation with real time (ratio <= 1)
             }
             namespace CEMOpt
@@ -63,28 +63,101 @@ namespace pq
             {
                 constexpr int target_x = 10;                           // target x position
                 constexpr int target_y = 10;                           // target y position
-                constexpr int horizon = 50;                           // Horizon
+                constexpr int horizon = 20;                            // Horizon
                 constexpr double dt = Sim::dt;                         // optimization time step
-                constexpr double F_max = 16 * Constant::mass * Constant::g; // maximum force
+                constexpr double F_max = Constant::mass * Constant::g; // maximum force
+                constexpr int prev_steps_init = 5;                     // number of previous steps to use for warm start
+                bool use_learned = false;                              // whether to use learned model (false initially because it is not trained)
             }
             namespace SymNN
             {
 #ifdef NUM_OPT
                 std::unique_ptr<symnn::SymNN> learned_model;
 #endif
-                bool use = false;
-                constexpr int epochs = 100;
+                bool gradient_based = true;
+                // Gradient-based only parameters
+                constexpr int epochs = 10000;
+                constexpr double learning_rate = 0.01;
+                constexpr double momentum = 0;
             }
             namespace Train
             {
-                constexpr int collection_steps = 50; // number of steps to collect data for training (per episode)
-                constexpr int episodes = 10;          // number of episodes to train
-                constexpr int runs = 5;               // number of runs to train (for averaging)
+                constexpr bool big_angle_stop = true;                // whether to stop training after angle values get too big
+                constexpr bool big_angle_view = false;               // whether to keep visualizing after angle values get too big
+                constexpr double big_angle_threshold = 3 * M_PI / 8; // threshold for big angle values
+                constexpr int collection_steps = 60;                 // number of steps to collect data for training (per episode)
+                constexpr int episodes = 10;                         // number of episodes to train
+                constexpr int runs = 5;                              // number of runs to train (for averaging)
             }
         }
 
         Eigen::Vector<double, 6> init_state;
         Eigen::Vector<double, 6> target;
+    }
+}
+
+namespace quadrotor
+{
+    namespace Value
+    {
+        namespace Constant
+        {
+            constexpr double g = 9.81;
+            Eigen::Matrix<double, 4, 3> H_mat = (Eigen::Matrix<double, 4, 3>() << 0, 0, 0,
+                                                 1, 0, 0,
+                                                 0, 1, 0,
+                                                 0, 0, 1)
+                                                    .finished();
+            constexpr double mass = 0.5;
+            constexpr double length = 0.175;
+            Eigen::Matrix3d I = (Eigen::Matrix3d() << 0.0023, 0, 0,
+                                 0, 0.0023, 0,
+                                 0, 0, 0.004)
+                                    .finished();
+            constexpr double Kf = 1.0;
+            constexpr double Kt = 0.0245;
+
+        }
+
+        namespace Param
+        {
+            namespace Sim
+            {
+                constexpr double dt = 0.05;
+            }
+            namespace NumOpt
+            {
+                constexpr int target_x = 4;
+                constexpr int target_y = 4;
+                constexpr int target_z = 2;
+                constexpr int horizon = 15;
+                constexpr double dt = Sim::dt;
+                constexpr double control_max = 4 * Constant::mass * Constant::g;
+                constexpr int prev_steps_init = 5;
+                bool use_learned = false;
+            }
+            namespace SymNN
+            {
+#ifdef NUM_OPT
+                std::unique_ptr<symnn::SymNN> learned_model;
+#endif
+                bool gradient_based = false;
+                // Gradient-based only parameters
+                constexpr int epochs = 10000;
+                constexpr double learning_rate = 0.01;
+                constexpr double momentum = 0;
+            }
+            namespace Train
+            {
+                constexpr bool bad_episode_stop = true;              // whether to stop bad episodes
+                constexpr int collection_steps = 60;                 // number of steps to collect data for training (per episode)
+                constexpr int episodes = 10;                         // number of episodes to train
+                constexpr int runs = 5;                              // number of runs to train (for averaging)
+            }
+        }
+
+        Eigen::Vector<double, 13> init_state;
+        Eigen::Vector<double, 13> target;
     }
 }
 

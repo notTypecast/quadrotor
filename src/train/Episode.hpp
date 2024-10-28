@@ -13,6 +13,7 @@
 #include "src/opt/DynamicModel.hpp"
 #include "src/sim/PlanarQuadrotor.hpp"
 #include "src/sim/Visualizer.hpp"
+#include "src/sim/Quadrotor.hpp"
 
 namespace pq
 {
@@ -50,6 +51,11 @@ namespace pq
                 return _train_target;
             }
 
+            int get_stop_step()
+            {
+                return _stop_step;
+            }
+
             void set_run(int run)
             {
                 _run_iter = run;
@@ -58,6 +64,7 @@ namespace pq
         protected:
             Eigen::MatrixXd _train_input;
             Eigen::MatrixXd _train_target;
+            int _stop_step = -1;
             int _episode = 1;
             int _run_iter = -1;
             bool _visualize = false;
@@ -65,6 +72,8 @@ namespace pq
 
             std::vector<double> _run(Optimizer &optimizer)
             {
+                _stop_step = -1;
+
                 optimizer.reinit();
 
                 pq::sim::PlanarQuadrotor p(pq::Value::Constant::mass, pq::Value::Constant::inertia, pq::Value::Constant::length);
@@ -75,7 +84,7 @@ namespace pq
                 std::chrono::duration<double> total_time = std::chrono::duration<double>::zero();
                 auto real_start = std::chrono::high_resolution_clock::now();
 
-                int episode_idx = (_run_iter - 1) * pq::Value::Param::Train::episodes * pq::Value::Param::Train::collection_steps + (_episode - 1) * pq::Value::Param::Train::collection_steps;
+                // int episode_idx = (_run_iter - 1) * pq::Value::Param::Train::episodes * pq::Value::Param::Train::collection_steps + (_episode - 1) * pq::Value::Param::Train::collection_steps;
 
                 std::vector<double> errors(pq::Value::Param::Train::collection_steps, 0);
 
@@ -110,7 +119,7 @@ namespace pq
                        << " Hz, angle: " << p.get_state()[2] * 360 / M_PI
                        << " deg, time: " << p.get_sim_time()
                        << " sec (ratio " << pq::Value::Param::Sim::dt / std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::high_resolution_clock::now() - real_start).count()
-                       << "), MPC mass: " << pq::Value::Param::CEMOpt::mass
+                       << "), MPC mass: " << optimizer.model_params()[0]
                        << " kg, episode: " << _episode;
                     if (_run_iter != -1)
                     {
@@ -119,7 +128,7 @@ namespace pq
                     if (_visualize)
                     {
                         _v.set_message(ss.str());
-                        _v.show(p, {pq::Value::Param::CEMOpt::target_x, pq::Value::Param::CEMOpt::target_y});
+                        _v.show(p, {pq::Value::target[0], pq::Value::target[1]});
                     }
 
                     ++count;
@@ -129,12 +138,104 @@ namespace pq
                         count = 0;
                         elapsed = std::chrono::duration<double>::zero();
                     }
+
+                    if (pq::Value::Param::Train::big_angle_stop && std::abs(p.get_state()[2]) > pq::Value::Param::Train::big_angle_threshold && _stop_step == -1)
+                    {
+                        _stop_step = i;
+                        if (!pq::Value::Param::Train::big_angle_view)
+                        {
+                            break;
+                        }
+                    }
                 }
 
                 ++_episode;
 
                 return errors;
             }
+        };
+    }
+}
+
+namespace quadrotor
+{
+    namespace train
+    {
+        class Episode
+        {
+        public:
+            Episode()
+            {
+                _train_input = Eigen::MatrixXd(17, quadrotor::Value::Param::Train::collection_steps);
+                _train_target = Eigen::MatrixXd(6, quadrotor::Value::Param::Train::collection_steps);
+            }
+
+            std::vector<double> run(pq::Optimizer &optimizer)
+            {
+                _stop_step = -1;
+                optimizer.reinit();
+
+                quadrotor::sim::Quadrotor q(quadrotor::Value::Constant::mass, quadrotor::Value::Constant::I, quadrotor::Value::Constant::length);
+
+                std::vector<double> errors(quadrotor::Value::Param::Train::collection_steps, 0);
+
+                for (int i = 0; i < quadrotor::Value::Param::Train::collection_steps; ++i)
+                {
+                    Eigen::VectorXd init_state = q.get_state();
+
+                    if (quadrotor::Value::Param::Train::bad_episode_stop && init_state.segment(7, 6).array().abs().maxCoeff() > 100)
+                    {
+                        _stop_step = i - 1;
+                        break;
+                    }
+                    std::cout << "Current state: " << init_state.transpose() << std::endl;
+
+                    Eigen::Vector4d controls;
+
+                    try
+                    {
+                        controls = optimizer.next(init_state, quadrotor::Value::target);
+                    }
+                    catch (std::exception &e)
+                    {
+                        std::cout << "Optimization failed, stopping episode" << std::endl;
+                        _stop_step = i - 1;
+                        break;
+                    }
+
+                    q.update(controls, quadrotor::Value::Param::Sim::dt);
+
+                    errors[i] = (quadrotor::Value::target - q.get_state()).squaredNorm();
+
+                    _train_input.col(i) = (Eigen::Vector<double, 17>() << init_state, controls).finished();
+                    _train_target.col(i) = q.get_last_ddq() - quadrotor::dynamic_model_predict(init_state, controls, optimizer.model_params());
+                }
+
+                std::cout << "Final state: " << q.get_state().transpose() << std::endl;
+                std::cout << "Final error: " << errors[_stop_step] << std::endl;
+
+                return errors;
+            }
+
+            Eigen::MatrixXd get_train_input()
+            {
+                return _train_input;
+            }
+
+            Eigen::MatrixXd get_train_target()
+            {
+                return _train_target;
+            }
+
+            int get_stop_step()
+            {
+                return _stop_step;
+            }
+
+        protected:
+            Eigen::MatrixXd _train_input;
+            Eigen::MatrixXd _train_target;
+            int _stop_step = -1;
         };
     }
 }

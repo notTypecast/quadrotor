@@ -17,9 +17,34 @@
 
 int main(int argc, char **argv)
 {
+    /*
+    symnn::SymNN symnn(3, 2, std::vector<int>{4, 2});
+
+    Eigen::MatrixXd input(3, 3);
+    input << 1, 1, 1,
+        2, 2, 2,
+        3, 2, 10;
+
+    std::cout << "Input: " << std::endl;
+    std::cout << input << std::endl;
+
+    Eigen::MatrixXd target(2, 3);
+    target << 4, 5, 50,
+        5, 4, 40;
+
+    std::cout << "Target: " << std::endl;
+    std::cout << target << std::endl;
+
+    symnn.train(input, target);
+
+    std::cout << symnn.forward((Eigen::Vector3d() << 1, 2, 3).finished()).transpose() << std::endl;
+    std::cout << symnn.forward((Eigen::Vector3d() << 1, 2, 2).finished()).transpose() << std::endl;
+    std::cout << symnn.forward((Eigen::Vector3d() << 1, 2, 10).finished()).transpose() << std::endl;
+    */
+
     pq::Value::target << pq::Value::Param::CEMOpt::target_x, pq::Value::Param::CEMOpt::target_y, 0, 0, 0, 0;
-    pq::Value::Param::SymNN::learned_model = std::make_unique<symnn::SymNN>(8, 3, std::vector<int>{4, 3, 2});
-    
+    pq::Value::Param::SymNN::learned_model = std::make_unique<symnn::SymNN>(8, 3, std::vector<int>{12, 6, 4}, symnn::activation::sigmoid, pq::Value::Param::SymNN::gradient_based);
+
 
     double masses[] = {4, 8, 16};
     std::vector<std::vector<double>> errors_per_episode(pq::Value::Param::Train::runs * pq::Value::Param::Train::episodes);
@@ -30,8 +55,7 @@ int main(int argc, char **argv)
         pq::num_opt::Params params;
         params.m = masses[i];
         params.I = 0.2 * masses[i] * pq::Value::Param::CEMOpt::length * pq::Value::Param::CEMOpt::length;
-        params.init = Eigen::Vector3d(0, 0, 0);
-        params.target << pq::Value::Param::CEMOpt::target_x, pq::Value::Param::CEMOpt::target_y, 0;
+        params.init = Eigen::Vector<double, 6>::Zero();
 
         pq::num_opt::NumOptimizer optimizer(params);
 
@@ -42,7 +66,7 @@ int main(int argc, char **argv)
             std::srand(std::time(NULL));
             std::cout << "Run " << j << std::endl;
             pq::Value::Param::SymNN::learned_model->reset();
-            pq::Value::Param::SymNN::use = false;
+            pq::Value::Param::NumOpt::use_learned = false;
             pq::train::Episode episode;
             episode.set_run(j + 1);
 
@@ -51,7 +75,7 @@ int main(int argc, char **argv)
             for (int k = 0; k < pq::Value::Param::Train::episodes; ++k)
             {
                 std::cout << k << " " << std::flush;
-                errors_per_episode[run_idx + k] = episode.run(optimizer);
+                errors_per_episode[run_idx + k] = episode.run(optimizer, v);
                 /*
                 // Early stopping if the change in error is smaller than a threshold
                 // This will not work if writing to a file
@@ -59,11 +83,10 @@ int main(int argc, char **argv)
                 {
                     std::cout << ":done";
                     break;
-                }
-                */
+                }*/
 
-                pq::Value::Param::SymNN::learned_model->train(episode.get_train_input(), episode.get_train_target());
-                pq::Value::Param::SymNN::use = true;
+                pq::Value::Param::SymNN::learned_model->train(episode.get_train_input(), episode.get_train_target(), episode.get_stop_step());
+                pq::Value::Param::NumOpt::use_learned = true;
                 std::cout << episode.get_train_target().col(0).transpose() << std::endl;
                 std::cout << "NN sample: " << pq::Value::Param::SymNN::learned_model->forward(episode.get_train_input().col(0)).transpose() << std::endl;
             }

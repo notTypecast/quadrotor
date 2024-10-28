@@ -31,3 +31,12 @@ build-num: main_num.cpp
 
 run-num: build/main_num
 	./build/main_num
+
+build-quad: main_quad.cpp
+	$(CXX) $(INCLUDES_NUM) main_quad.cpp -o build/main_quad $(CXXFLAGS) $(CASADI_FLAGS)
+
+run-quad: build/main_quad
+	./build/main_quad
+
+clean:
+	rm -f build/*

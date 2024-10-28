@@ -47,7 +47,7 @@ int main(int argc, char **argv)
             for (int k = 0; k < pq::Value::Param::Train::episodes; ++k)
             {
                 std::cout << k << " " << std::flush;
-                errors_per_episode[run_idx + k] = episode.run(optimizer);
+                errors_per_episode[run_idx + k] = episode.run(optimizer, v);
                 /*
                 // Early stopping if the change in error is smaller than a threshold
                 // This will not work if writing to a file
