@@ -74,7 +74,7 @@ namespace pq
 #ifdef NUM_OPT
                 std::unique_ptr<symnn::SymNN> learned_model;
 #endif
-                bool gradient_based = true;
+                bool gradient_based = false;
                 // Gradient-based only parameters
                 constexpr int epochs = 10000;
                 constexpr double learning_rate = 0.01;
@@ -132,7 +132,7 @@ namespace quadrotor
                 constexpr int target_z = 2;
                 constexpr int horizon = 15;
                 constexpr double dt = Sim::dt;
-                constexpr double control_max = 4 * Constant::mass * Constant::g;
+                constexpr double control_max = Constant::mass * Constant::g / 2;
                 constexpr int prev_steps_init = 5;
                 bool use_learned = false;
             }
@@ -143,8 +143,8 @@ namespace quadrotor
 #endif
                 bool gradient_based = false;
                 // Gradient-based only parameters
-                constexpr int epochs = 10000;
-                constexpr double learning_rate = 0.01;
+                constexpr int epochs = 100000;
+                constexpr double learning_rate = 0.0001;
                 constexpr double momentum = 0;
             }
             namespace Train

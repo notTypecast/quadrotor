@@ -2,3 +2,5 @@ build/*
 .vscode/
 TODO.txt
 variables.sh
+main.cpp
+main

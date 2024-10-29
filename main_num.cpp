@@ -43,7 +43,16 @@ int main(int argc, char **argv)
     */
 
     pq::Value::target << pq::Value::Param::CEMOpt::target_x, pq::Value::Param::CEMOpt::target_y, 0, 0, 0, 0;
-    pq::Value::Param::SymNN::learned_model = std::make_unique<symnn::SymNN>(8, 3, std::vector<int>{12, 6, 4}, symnn::activation::sigmoid, pq::Value::Param::SymNN::gradient_based);
+
+    symnn::Params params;
+    params.input_size = 8;
+    params.output_size = 3;
+    params.hidden_layers = std::vector<int>{6, 4};
+    params.gradient_based = pq::Value::Param::SymNN::gradient_based;
+    params.epochs = pq::Value::Param::SymNN::epochs;
+    params.learning_rate = pq::Value::Param::SymNN::learning_rate;
+    params.momentum = pq::Value::Param::SymNN::momentum;
+    pq::Value::Param::SymNN::learned_model = std::make_unique<symnn::SymNN>(params);
 
 
     double masses[] = {4, 8, 16};

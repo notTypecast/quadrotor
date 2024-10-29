@@ -73,7 +73,17 @@ int main()
 
     
     quadrotor::Value::target << quadrotor::Value::Param::NumOpt::target_x, quadrotor::Value::Param::NumOpt::target_y, quadrotor::Value::Param::NumOpt::target_z, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-    quadrotor::Value::Param::SymNN::learned_model = std::make_unique<symnn::SymNN>(17, 6, std::vector<int>{12, 6, 4}, symnn::activation::Lrelu, quadrotor::Value::Param::SymNN::gradient_based);
+
+    symnn::Params params;
+    params.input_size = 17;
+    params.output_size = 6;
+    params.hidden_layers = std::vector<int>{6, 4};
+    params.activation = symnn::activation::sigmoid;
+    params.gradient_based = quadrotor::Value::Param::SymNN::gradient_based;
+    params.epochs = quadrotor::Value::Param::SymNN::epochs;
+    params.learning_rate = quadrotor::Value::Param::SymNN::learning_rate;
+    params.momentum = quadrotor::Value::Param::SymNN::momentum;
+    quadrotor::Value::Param::SymNN::learned_model = std::make_unique<symnn::SymNN>(params);
 
     double masses[] = {2, 4, 8};
     std::vector<std::vector<double>> errors_per_episode(pq::Value::Param::Train::runs * pq::Value::Param::Train::episodes);
@@ -105,6 +115,15 @@ int main()
                 //std::cout << episode.get_train_target().block(0, 0, 6, episode.get_stop_step()) << std::endl;
 
                 quadrotor::Value::Param::SymNN::learned_model->train(episode.get_train_input(), episode.get_train_target(), episode.get_stop_step());
+                /*
+                std::cout << "NN expected:" << std::endl;
+                std::cout << episode.get_train_target().block(0, 0, 6, episode.get_stop_step()).transpose() << std::endl;
+                std::cout << "NN actual:" << std::endl;
+                for (int l = 0; l < episode.get_stop_step(); ++l)
+                {
+                    std::cout << quadrotor::Value::Param::SymNN::learned_model->forward(episode.get_train_input().col(l)).transpose() << std::endl;
+                }
+                */
                 quadrotor::Value::Param::NumOpt::use_learned = true;
             }
         }

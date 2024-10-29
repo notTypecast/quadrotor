@@ -246,6 +246,7 @@ namespace quadrotor
             virtual Eigen::VectorXd next(const Eigen::VectorXd &init, const Eigen::VectorXd &target)
             {
                 _setup(init, target);
+                
                 Eigen::VectorXd res = solve().col(0);
                 return res;
             }

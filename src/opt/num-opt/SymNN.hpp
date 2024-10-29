@@ -41,29 +41,41 @@ namespace symnn
         }
     }
 
+    struct Params
+    {
+        int input_size;
+        int output_size;
+        std::vector<int> hidden_layers;
+        std::function<MX(MX)> activation = activation::sigmoid;
+        bool gradient_based = true;
+        // Gradient-based only parameters
+        int epochs = 10000;
+        double learning_rate = 0.01;
+        double momentum = 0;
+};
+
     // Fully connected NN
     class SymNN
     {
     public:
-        SymNN(int input_size,
-              int output_size,
-              const std::vector<int> &hidden_layers,
-              std::function<MX(MX)> activation = activation::sigmoid,
-              bool gradient_based = true) : _input_size(input_size),
-                                            _output_size(output_size),
-                                            _gradient_based(gradient_based)
+        SymNN(const Params &params) : _input_size(params.input_size),
+                                            _output_size(params.output_size),
+                                            _gradient_based(params.gradient_based),
+                                            _epochs(params.epochs),
+                                            _learning_rate(params.learning_rate),
+                                            _momentum(params.momentum)
         {
-            _X = MX::sym("X", input_size);
-            _Y = MX::sym("Y", output_size);
+            _X = MX::sym("X", _input_size);
+            _Y = MX::sym("Y", _output_size);
 
             std::vector<MX> all_params;
             all_params.push_back(_X);
 
             std::vector<MX> flat_params;
 
-            _W.push_back(MX::sym("W0", hidden_layers[0], input_size));
-            _b.push_back(MX::sym("b0", hidden_layers[0]));
-            MX prev = activation(mtimes(_W[0], _X) + _b[0]);
+            _W.push_back(MX::sym("W0", params.hidden_layers[0], _input_size));
+            _b.push_back(MX::sym("b0", params.hidden_layers[0]));
+            MX prev = params.activation(mtimes(_W[0], _X) + _b[0]);
 
             all_params.push_back(_W[0]);
             all_params.push_back(_b[0]);
@@ -71,11 +83,11 @@ namespace symnn
             flat_params.push_back(reshape(_W[0], -1, 1));
             flat_params.push_back(_b[0]);
 
-            for (int i = 1; i < hidden_layers.size(); ++i)
+            for (int i = 1; i < params.hidden_layers.size(); ++i)
             {
-                _W.push_back(MX::sym("W" + std::to_string(i), hidden_layers[i], hidden_layers[i - 1]));
-                _b.push_back(MX::sym("b" + std::to_string(i), hidden_layers[i]));
-                prev = activation(mtimes(_W[i], prev) + _b[i]);
+                _W.push_back(MX::sym("W" + std::to_string(i), params.hidden_layers[i], params.hidden_layers[i - 1]));
+                _b.push_back(MX::sym("b" + std::to_string(i), params.hidden_layers[i]));
+                prev = params.activation(mtimes(_W[i], prev) + _b[i]);
 
                 all_params.push_back(_W[i]);
                 all_params.push_back(_b[i]);
@@ -84,8 +96,8 @@ namespace symnn
                 flat_params.push_back(_b[i]);
             }
 
-            _W.push_back(MX::sym("Wout", output_size, hidden_layers.back()));
-            _b.push_back(MX::sym("bout", output_size));
+            _W.push_back(MX::sym("Wout", params.output_size, params.hidden_layers.back()));
+            _b.push_back(MX::sym("bout", params.output_size));
 
             all_params.push_back(_W.back());
             all_params.push_back(_b.back());
@@ -152,92 +164,11 @@ namespace symnn
         {
             if (_gradient_based)
             {
-                DM current_params;
-                // std::cout << "First value: " << _nn_values[0] << std::endl;
-                for (int i = 0; i < _nn_values.size(); i += 2)
-                {
-                    current_params = vertcat(current_params, reshape(_nn_values[i], -1, 1));
-                    current_params = vertcat(current_params, _nn_values[i + 1]);
-                }
-                // std::cout << current_params << std::endl;
-
-                DM X = DM(input.rows(), input.cols());
-                for (int i = 0; i < input.rows(); ++i)
-                {
-                    for (int j = 0; j < input.cols(); ++j)
-                    {
-                        X(i, j) = input(i, j);
-                    }
-                }
-
-                DM Y = DM(target.rows(), target.cols());
-                for (int i = 0; i < target.rows(); ++i)
-                {
-                    for (int j = 0; j < target.cols(); ++j)
-                    {
-                        Y(i, j) = target(i, j);
-                    }
-                }
-
-                for (int epoch = 0; epoch < pq::Value::Param::SymNN::epochs; ++epoch)
-                {
-                    DM prev_update = DM::zeros(current_params.size1(), current_params.size2());
-                    for (int j = 0; j < (stop_col == -1 ? input.cols() : stop_col); ++j)
-                    {
-                        std::vector<DM> params = {current_params, X(Slice(), j), Y(Slice(), j)};
-
-                        DM grad_values = _gradient_fn(params)[0];
-                        // std::cout << "Gradient values: " << grad_values << std::endl;
-
-                        DM update = pq::Value::Param::SymNN::learning_rate * grad_values;
-                        current_params -= update + pq::Value::Param::SymNN::momentum * prev_update;
-                        prev_update = update;
-                    }
-                }
-
-                // std::cout << "First value now: " << current_params(0) << std::endl;
+                _train_gd(input, target, stop_col);
             }
             else
             {
-                MX loss = _instance_loss(input.col(0), target.col(0));
-
-                for (int j = 1; j < (stop_col == -1 ? input.cols() : stop_col); ++j)
-                {
-                    loss += _instance_loss(input.col(j), target.col(j));
-                }
-
-                MXDict nlp = {
-                    {"x", _opt_vars},
-                    {"f", loss}};
-
-                Dict opts;
-                opts["ipopt.print_level"] = 0;
-                opts["print_time"] = false;
-                opts["ipopt.tol"] = 1e-4;
-
-                Function solver = nlpsol("solver", "ipopt", nlp, opts);
-
-                std::vector<DM> params(_nn_values.size());
-                for (int i = 0; i < _nn_values.size(); i += 2)
-                {
-                    params[i] = reshape(_nn_values[i], -1, 1);
-                    params[i + 1] = _nn_values[i + 1];
-                }
-
-                DMDict args;
-                args["x0"] = vertcat(params);
-
-                DMDict result = solver(args);
-
-                DM out = result.at("x");
-
-                int offset = 0;
-                for (int i = 0; i < _nn_values.size(); ++i)
-                {
-                    int param_size = _nn_values[i].size1() * _nn_values[i].size2();
-                    _nn_values[i] = reshape(out(Slice(offset, offset + param_size), 0), _nn_values[i].size1(), _nn_values[i].size2());
-                    offset += param_size;
-                }
+                _train_ipopt(input, target, stop_col);
             }
 
             _out_substituted = _out;
@@ -266,6 +197,8 @@ namespace symnn
     protected:
         bool _gradient_based;
         int _input_size, _output_size;
+        int _epochs;
+        double _learning_rate, _momentum;
         int _total_size;
         MX _X, _Y;
         std::vector<MX> _W, _b;
@@ -298,6 +231,105 @@ namespace symnn
             loss_sub = substitute(loss_sub, _Y, Y);
 
             return loss_sub;
+        }
+
+        void _train_gd(const Eigen::MatrixXd &input, const Eigen::MatrixXd &target, int stop_col = -1)
+        {
+            DM current_params;
+            // std::cout << "First value: " << _nn_values[0] << std::endl;
+            for (int i = 0; i < _nn_values.size(); i += 2)
+            {
+                current_params = vertcat(current_params, reshape(_nn_values[i], -1, 1));
+                current_params = vertcat(current_params, _nn_values[i + 1]);
+            }
+            // std::cout << current_params << std::endl;
+
+            DM X = DM(input.rows(), input.cols());
+            for (int i = 0; i < input.rows(); ++i)
+            {
+                for (int j = 0; j < input.cols(); ++j)
+                {
+                    X(i, j) = input(i, j);
+                }
+            }
+
+            DM Y = DM(target.rows(), target.cols());
+            for (int i = 0; i < target.rows(); ++i)
+            {
+                for (int j = 0; j < target.cols(); ++j)
+                {
+                    Y(i, j) = target(i, j);
+                }
+            }
+
+            for (int epoch = 0; epoch < _epochs; ++epoch)
+            {
+                DM prev_update = DM::zeros(current_params.size1(), current_params.size2());
+                for (int j = 0; j < (stop_col == -1 ? input.cols() : stop_col); ++j)
+                {
+                    std::vector<DM> params = {current_params, X(Slice(), j), Y(Slice(), j)};
+
+                    DM grad_values = _gradient_fn(params)[0];
+                    // std::cout << "Gradient values: " << grad_values << std::endl;
+
+                    DM update = _learning_rate * grad_values;
+                    current_params -= update + _momentum * prev_update;
+                    prev_update = update;
+                }
+            }
+
+            int offset = 0;
+            for (int i = 0; i < _nn_values.size(); ++i)
+            {
+                int param_size = _nn_values[i].size1() * _nn_values[i].size2();
+                _nn_values[i] = reshape(current_params(Slice(offset, offset + param_size), 0), _nn_values[i].size1(), _nn_values[i].size2());
+                offset += param_size;
+            }
+            
+            // std::cout << "First value now: " << current_params(0) << std::endl;
+        }
+
+        void _train_ipopt(const Eigen::MatrixXd &input, const Eigen::MatrixXd &target, int stop_col = -1)
+        {
+            MX loss = _instance_loss(input.col(0), target.col(0));
+
+            for (int j = 1; j < (stop_col == -1 ? input.cols() : stop_col); ++j)
+            {
+                loss += _instance_loss(input.col(j), target.col(j));
+            }
+
+            MXDict nlp = {
+                {"x", _opt_vars},
+                {"f", loss}};
+
+            Dict opts;
+            opts["ipopt.print_level"] = 0;
+            opts["print_time"] = false;
+            opts["ipopt.tol"] = 1e-4;
+
+            Function solver = nlpsol("solver", "ipopt", nlp, opts);
+
+            std::vector<DM> params(_nn_values.size());
+            for (int i = 0; i < _nn_values.size(); i += 2)
+            {
+                params[i] = reshape(_nn_values[i], -1, 1);
+                params[i + 1] = _nn_values[i + 1];
+            }
+
+            DMDict args;
+            args["x0"] = vertcat(params);
+
+            DMDict result = solver(args);
+
+            DM out = result.at("x");
+
+            int offset = 0;
+            for (int i = 0; i < _nn_values.size(); ++i)
+            {
+                int param_size = _nn_values[i].size1() * _nn_values[i].size2();
+                _nn_values[i] = reshape(out(Slice(offset, offset + param_size), 0), _nn_values[i].size1(), _nn_values[i].size2());
+                offset += param_size;
+            }
         }
     };
 }

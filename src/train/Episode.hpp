@@ -199,16 +199,26 @@ namespace quadrotor
                     catch (std::exception &e)
                     {
                         std::cout << "Optimization failed, stopping episode" << std::endl;
+                        if (i == 0)
+                        {
+                            std::cout << "Failed on first step, exiting" << std::endl;
+                            exit(0);
+                        }
                         _stop_step = i - 1;
                         break;
                     }
 
                     q.update(controls, quadrotor::Value::Param::Sim::dt);
 
-                    errors[i] = (quadrotor::Value::target - q.get_state()).squaredNorm();
+                    errors[i] = (quadrotor::Value::target.segment(0, 3) - q.get_state().segment(0, 3)).squaredNorm();
 
                     _train_input.col(i) = (Eigen::Vector<double, 17>() << init_state, controls).finished();
                     _train_target.col(i) = q.get_last_ddq() - quadrotor::dynamic_model_predict(init_state, controls, optimizer.model_params());
+                }
+
+                if (_stop_step == -1)
+                {
+                    _stop_step = quadrotor::Value::Param::Train::collection_steps - 1;
                 }
 
                 std::cout << "Final state: " << q.get_state().transpose() << std::endl;
