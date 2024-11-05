@@ -183,9 +183,9 @@ namespace quadrotor
                 {
                     Eigen::VectorXd init_state = q.get_state();
 
-                    if (quadrotor::Value::Param::Train::bad_episode_stop && init_state.segment(7, 6).array().abs().maxCoeff() > 100)
+                    if ((q.get_orientation() * Eigen::Vector3d::UnitZ()).dot(Eigen::Vector3d::UnitZ()) < quadrotor::Value::Param::Train::bad_episode_threshold)
                     {
-                        _stop_step = i - 1;
+                        _stop_step = i - 2 < 0 ? 0 : i - 2;
                         break;
                     }
                     std::cout << "Current state: " << init_state.transpose() << std::endl;
@@ -199,12 +199,7 @@ namespace quadrotor
                     catch (std::exception &e)
                     {
                         std::cout << "Optimization failed, stopping episode" << std::endl;
-                        if (i == 0)
-                        {
-                            std::cout << "Failed on first step, exiting" << std::endl;
-                            exit(0);
-                        }
-                        _stop_step = i - 1;
+                        _stop_step = i - 2 < 0 ? 0 : i - 2;
                         break;
                     }
 
@@ -221,7 +216,6 @@ namespace quadrotor
                     _stop_step = quadrotor::Value::Param::Train::collection_steps - 1;
                 }
 
-                std::cout << "Final state: " << q.get_state().transpose() << std::endl;
                 std::cout << "Final error: " << errors[_stop_step] << std::endl;
 
                 return errors;
@@ -229,12 +223,12 @@ namespace quadrotor
 
             Eigen::MatrixXd get_train_input()
             {
-                return _train_input;
+                return _stop_step == -1 ? _train_input : _train_input.block(0, 0, 17, _stop_step);
             }
 
             Eigen::MatrixXd get_train_target()
             {
-                return _train_target;
+                return _stop_step == -1 ? _train_target : _train_target.block(0, 0, 6, _stop_step);
             }
 
             int get_stop_step()

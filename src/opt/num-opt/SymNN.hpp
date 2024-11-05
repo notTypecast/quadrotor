@@ -15,17 +15,17 @@ namespace symnn
 {
     namespace activation
     {
-        MX sigmoid(const MX &x)
+        MX Sigmoid(const MX &x)
         {
             return 1 / (1 + exp(-x));
         }
 
-        MX softmax(const MX &x)
+        MX Softmax(const MX &x)
         {
             return exp(x) / sum1(exp(x));
         }
 
-        MX relu(const MX &x)
+        MX Relu(const MX &x)
         {
             return fmax(0, x);
         }
@@ -39,6 +39,60 @@ namespace symnn
         {
             return if_else(x > 0, x, 0.01 * (exp(x) - 1));
         }
+
+        MX Tanh(const MX &x)
+        {
+            return tanh(x);
+        }
+    }
+
+    namespace initializers
+    {
+        /* Initializer inputs:
+         * rows: number of rows in the matrix
+         *  also represents the number of neurons in the current layer
+         * cols: number of columns in the matrix
+         *  also represents the number of neurons in the previous layer (input size)
+         * next: number of neurons in the next layer (output size)
+         */
+
+        // Zero initialization
+        // next is used for signature only
+        DM Zero(int rows, int cols, int next)
+        {
+            return DM::zeros(rows, cols);
+        }
+
+        // Random initialization
+        // next is used for signature only
+        DM Random(int rows, int cols, int next)
+        {
+            return DM::rand(rows, cols);
+        }
+
+        // He initialization
+        // next is used for signature only
+        DM He(int rows, int cols, int next)
+        {
+            return DM::rand(rows, cols) * sqrt(2.0 / rows);
+        }
+
+        // Xavier initialization
+        // next is used for signature only
+        DM Xavier(int rows, int cols, int next)
+        {
+            double lower = -sqrt(1 / cols);
+            double upper = -lower;
+            return DM::rand(rows, cols) * (upper - lower) + lower;
+        }
+
+        // Normalized Xavier initialization
+        DM NXavier(int rows, int cols, int next)
+        {
+            double lower = -sqrt(6.0 / (cols + next));
+            double upper = -lower;
+            return DM::rand(rows, cols) * (upper - lower) + lower;
+        }
     }
 
     struct Params
@@ -46,24 +100,28 @@ namespace symnn
         int input_size;
         int output_size;
         std::vector<int> hidden_layers;
-        std::function<MX(MX)> activation = activation::sigmoid;
+        std::function<MX(MX)> activation = activation::Sigmoid;
+        std::function<DM(int, int, int)> initializer = initializers::NXavier;
         bool gradient_based = true;
         // Gradient-based only parameters
         int epochs = 10000;
         double learning_rate = 0.01;
         double momentum = 0;
-};
+        double max_grad = -1;
+    };
 
     // Fully connected NN
     class SymNN
     {
     public:
         SymNN(const Params &params) : _input_size(params.input_size),
-                                            _output_size(params.output_size),
-                                            _gradient_based(params.gradient_based),
-                                            _epochs(params.epochs),
-                                            _learning_rate(params.learning_rate),
-                                            _momentum(params.momentum)
+                                      _output_size(params.output_size),
+                                      _gradient_based(params.gradient_based),
+                                      _epochs(params.epochs),
+                                      _learning_rate(params.learning_rate),
+                                      _momentum(params.momentum),
+                                      _max_grad(params.max_grad),
+                                      _initializer(params.initializer)
         {
             _X = MX::sym("X", _input_size);
             _Y = MX::sym("Y", _output_size);
@@ -117,10 +175,20 @@ namespace symnn
             _gradients = gradient(_loss, flat_params_var);
             _gradient_fn = Function("gradient_fn", {flat_params_var, _X, _Y}, {_gradients});
 
-            for (int i = 1; i < all_params.size(); ++i)
+            for (int i = 1; i < all_params.size() - 2; ++i)
             {
-                _nn_values.push_back(DM::rand(all_params[i].size1(), all_params[i].size2()) * (i % 2 ? sqrt(2.0 / all_params[i].size1()) : 1));
+                if (i % 2)
+                {
+                    _nn_values.push_back(_initializer(all_params[i].size1(), all_params[i].size2(), all_params[i + 2].size1()));
+                }
+                else
+                {
+                    _nn_values.push_back(DM::rand(all_params[i].size1(), all_params[i].size2()));
+                }
             }
+
+            _nn_values.push_back(DM::rand(all_params[all_params.size() - 2].size1(), all_params[all_params.size() - 2].size2()));
+            _nn_values.push_back(DM::rand(all_params[all_params.size() - 1].size1(), all_params[all_params.size() - 1].size2()));
 
             std::vector<MX> opt_vars(all_params.size() - 1);
             for (int i = 0; i < _W.size(); ++i)
@@ -181,10 +249,20 @@ namespace symnn
 
         void reset()
         {
-            for (int i = 0; i < _nn_values.size(); ++i)
+            for (int i = 0; i < _nn_values.size() - 2; ++i)
             {
-                _nn_values[i] = DM::rand(_nn_values[i].size1(), _nn_values[i].size2()) * (i % 2 ? sqrt(2.0 / _nn_values[i].size1()) : 1);
+                if (i % 2)
+                {
+                    _nn_values[i] = DM::rand(_nn_values[i].size1(), _nn_values[i].size2());
+                }
+                else
+                {
+                    _nn_values[i] = _initializer(_nn_values[i].size1(), _nn_values[i].size2(), _nn_values[i + 2].size1());
+                }
             }
+
+            _nn_values[_nn_values.size() - 2] = DM::rand(_nn_values[_nn_values.size() - 2].size1(), _nn_values[_nn_values.size() - 2].size2());
+            _nn_values[_nn_values.size() - 1] = DM::rand(_nn_values[_nn_values.size() - 1].size1(), _nn_values[_nn_values.size() - 1].size2());
 
             _out_substituted = _out;
             for (int i = 0; i < _W.size(); ++i)
@@ -199,7 +277,9 @@ namespace symnn
         int _input_size, _output_size;
         int _epochs;
         double _learning_rate, _momentum;
+        double _max_grad;
         int _total_size;
+        std::function<DM(int, int, int)> _initializer;
         MX _X, _Y;
         std::vector<MX> _W, _b;
         MX _out;
@@ -273,6 +353,11 @@ namespace symnn
                     // std::cout << "Gradient values: " << grad_values << std::endl;
 
                     DM update = _learning_rate * grad_values;
+                    if (_max_grad > 0)
+                    {
+                        update = update / norm_2(update) * _max_grad;
+                        // update = if_else(fabs(update) > _max_grad, sign(update) * _max_grad, update);
+                    }
                     current_params -= update + _momentum * prev_update;
                     prev_update = update;
                 }
@@ -285,7 +370,10 @@ namespace symnn
                 _nn_values[i] = reshape(current_params(Slice(offset, offset + param_size), 0), _nn_values[i].size1(), _nn_values[i].size2());
                 offset += param_size;
             }
-            
+
+            // std::cout << "Weights:" << std::endl;
+            // std::cout << _nn_values << std::endl;
+
             // std::cout << "First value now: " << current_params(0) << std::endl;
         }
 

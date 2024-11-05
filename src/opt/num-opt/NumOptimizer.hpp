@@ -219,8 +219,8 @@ namespace quadrotor
             Eigen::MatrixXd solve()
             {
                 OptiSol sol = _opti.solve();
-
                 _prev_result = sol.value(_c);
+                _prev = true;
 
                 Eigen::MatrixXd C(4, _H);
 
@@ -241,7 +241,9 @@ namespace quadrotor
                 return C;
             }
 
-            virtual void reinit() {}
+            virtual void reinit() {
+                _prev = false;
+            }
 
             virtual Eigen::VectorXd next(const Eigen::VectorXd &init, const Eigen::VectorXd &target)
             {
@@ -271,6 +273,7 @@ namespace quadrotor
 
             Eigen::VectorXd _model_params;
 
+            bool _prev = false;
             DM _prev_result;
 
             void _setup(const Eigen::VectorXd &init, const Eigen::VectorXd &target)
@@ -288,7 +291,8 @@ namespace quadrotor
                 DM init_u_dm = DM::vertcat({init[7], init[8], init[9], init[10], init[11], init[12]});
                 DM target_u_dm = DM::vertcat({target[7], target[8], target[9], target[10], target[11], target[12]});
 
-                _opti.minimize(8 * sumsqr(_x - target_x_dm) + sumsqr(_u - target_u_dm));
+                // _opti.minimize(8 * sumsqr(_x - target_x_dm) + sumsqr(_u - target_u_dm));
+                _opti.minimize(8 * sumsqr(_x(Slice(0, 3), Slice()) - target_x_dm(Slice(0, 3), Slice())) + 2 * sumsqr(_x(Slice(3, 4), Slice()) - target_x_dm(Slice(3, 4), Slice())) + sumsqr(_u - target_u_dm));
 
                 _opti.subject_to(0 <= _c <= quadrotor::Value::Param::NumOpt::control_max);
 
@@ -392,15 +396,18 @@ namespace quadrotor
                     _opti.subject_to(_x(Slice(3, 7), i) == q / if_else(norm_2(q) > 1e-6, norm_2(q), 1.0, true));
                 }
 
-                for (int i = 0; i < pq::Value::Param::NumOpt::prev_steps_init; ++i)
+                if (_prev)
                 {
-                    _opti.set_initial(_c(Slice(), i), _prev_result(Slice(), i + 1));
+                    for (int i = 0; i < pq::Value::Param::NumOpt::prev_steps_init; ++i)
+                    {
+                        _opti.set_initial(_c(Slice(), i), _prev_result(Slice(), i + 1));
+                    }
                 }
 
                 Dict opts;
                 opts["ipopt.print_level"] = 0;
                 opts["print_time"] = false;
-                opts["ipopt.tol"] = 1e-6;
+                opts["ipopt.tol"] = 1e-3;
                 opts["ipopt.hessian_approximation"] = "limited-memory";
 
                 _opti.solver("ipopt", opts);

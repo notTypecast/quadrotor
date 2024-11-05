@@ -18,11 +18,13 @@
 int main(int argc, char **argv)
 {
     pq::Value::target << pq::Value::Param::CEMOpt::target_x, pq::Value::Param::CEMOpt::target_y, 0, 0, 0, 0;
-    pq::Value::Param::SimpleNN::learned_model = std::make_unique<pq::cem_opt::NNModel>(std::vector<int>{12, 6, 4});
+    pq::Value::Param::SimpleNN::learned_model = std::make_unique<pq::cem_opt::NNModel>(std::vector<int>{6, 4});
 
     double masses[] = {4, 8, 16};
     std::vector<std::vector<double>> errors_per_episode(pq::Value::Param::Train::runs * pq::Value::Param::Train::episodes);
     pq::sim::Visualizer v;
+
+    Eigen::MatrixXd train_input, train_target;
 
     for (int i = 0; i < 3; ++i)
     {
@@ -58,9 +60,43 @@ int main(int argc, char **argv)
                 }
                 */
 
+                /*
                 std::cout << episode.get_train_target().col(0).transpose() << std::endl;
                 std::cout << "NN sample: " << pq::Value::Param::SimpleNN::learned_model->predict(episode.get_train_input().col(0)).transpose() << std::endl;
-                pq::Value::Param::SimpleNN::learned_model->train(episode.get_train_input(), episode.get_train_target());
+                */
+
+                if (pq::Value::Param::SimpleNN::use_all_data)
+                {
+                    Eigen::MatrixXd new_input = episode.get_train_input();
+                    Eigen::MatrixXd new_target = episode.get_train_target();
+                    if (train_input.size() == 0)
+                    {
+                        train_input = new_input;
+                        train_target = new_target;
+                    }
+                    else
+                    {
+                        train_input.conservativeResize(train_input.rows(), train_input.cols() + new_input.cols());
+                        train_target.conservativeResize(train_target.rows(), train_target.cols() + new_target.cols());
+                        train_input.block(0, train_input.cols() - new_input.cols(), train_input.rows(), new_input.cols()) = new_input;
+                        train_target.block(0, train_target.cols() - new_target.cols(), train_target.rows(), new_target.cols()) = new_target;
+                    }
+                }
+                else
+                {
+                    train_input = episode.get_train_input();
+                    train_target = episode.get_train_target();
+                }
+
+                pq::Value::Param::SimpleNN::learned_model->train(train_input, train_target);
+
+                std::cout << "NN expected:" << std::endl;
+                std::cout << episode.get_train_target().block(0, 0, 3, episode.get_train_target().cols()).transpose() << std::endl;
+                std::cout << "NN actual:" << std::endl;
+                for (int l = 0; l < episode.get_train_target().cols(); ++l)
+                {
+                    std::cout << pq::Value::Param::SimpleNN::learned_model->predict(episode.get_train_input().col(l)).transpose() << std::endl;
+                }
             }
             std::cout << std::endl;
         }

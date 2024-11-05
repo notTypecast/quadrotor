@@ -1,6 +1,7 @@
 #ifndef PQ_DYNAMIC_MODEL_HPP
 #define PQ_DYNAMIC_MODEL_HPP
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 
 #include "src/params.hpp"
 

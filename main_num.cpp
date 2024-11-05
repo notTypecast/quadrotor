@@ -47,11 +47,14 @@ int main(int argc, char **argv)
     symnn::Params params;
     params.input_size = 8;
     params.output_size = 3;
-    params.hidden_layers = std::vector<int>{6, 4};
+    params.hidden_layers = std::vector<int>{4};
+    params.activation = symnn::activation::Sigmoid;
+    params.initializer = symnn::initializers::NXavier;
     params.gradient_based = pq::Value::Param::SymNN::gradient_based;
     params.epochs = pq::Value::Param::SymNN::epochs;
     params.learning_rate = pq::Value::Param::SymNN::learning_rate;
     params.momentum = pq::Value::Param::SymNN::momentum;
+    params.max_grad = pq::Value::Param::SymNN::max_grad;
     pq::Value::Param::SymNN::learned_model = std::make_unique<symnn::SymNN>(params);
 
 
@@ -96,8 +99,14 @@ int main(int argc, char **argv)
 
                 pq::Value::Param::SymNN::learned_model->train(episode.get_train_input(), episode.get_train_target(), episode.get_stop_step());
                 pq::Value::Param::NumOpt::use_learned = true;
-                std::cout << episode.get_train_target().col(0).transpose() << std::endl;
-                std::cout << "NN sample: " << pq::Value::Param::SymNN::learned_model->forward(episode.get_train_input().col(0)).transpose() << std::endl;
+                
+                std::cout << "NN expected:" << std::endl;
+                std::cout << episode.get_train_target().block(0, 0, 3, episode.get_train_target().cols()).transpose() << std::endl;
+                std::cout << "NN actual:" << std::endl;
+                for (int l = 0; l < episode.get_train_target().cols(); ++l)
+                {
+                    std::cout << pq::Value::Param::SymNN::learned_model->forward(episode.get_train_input().col(l)).transpose() << std::endl;
+                }
             }
             std::cout << std::endl;
         }

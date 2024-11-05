@@ -57,7 +57,8 @@ namespace pq
 #ifdef CEM_OPT
                 std::unique_ptr<pq::cem_opt::NNModel> learned_model;
 #endif
-                constexpr int epochs = 10000; // number of epochs for training
+                constexpr int epochs = 4000; // number of epochs for training
+                constexpr bool use_all_data = true;
             }
             namespace NumOpt
             {
@@ -74,18 +75,19 @@ namespace pq
 #ifdef NUM_OPT
                 std::unique_ptr<symnn::SymNN> learned_model;
 #endif
-                bool gradient_based = false;
+                bool gradient_based = true;
                 // Gradient-based only parameters
-                constexpr int epochs = 10000;
+                constexpr int epochs = 2000;
                 constexpr double learning_rate = 0.01;
                 constexpr double momentum = 0;
+                constexpr double max_grad = 1.0;
             }
             namespace Train
             {
-                constexpr bool big_angle_stop = true;                // whether to stop training after angle values get too big
+                constexpr bool big_angle_stop = true;               // whether to stop training after angle values get too big
                 constexpr bool big_angle_view = false;               // whether to keep visualizing after angle values get too big
                 constexpr double big_angle_threshold = 3 * M_PI / 8; // threshold for big angle values
-                constexpr int collection_steps = 60;                 // number of steps to collect data for training (per episode)
+                constexpr int collection_steps = 150;                // number of steps to collect data for training (per episode)
                 constexpr int episodes = 10;                         // number of episodes to train
                 constexpr int runs = 5;                              // number of runs to train (for averaging)
             }
@@ -130,10 +132,10 @@ namespace quadrotor
                 constexpr int target_x = 4;
                 constexpr int target_y = 4;
                 constexpr int target_z = 2;
-                constexpr int horizon = 15;
+                constexpr int horizon = 12;
                 constexpr double dt = Sim::dt;
                 constexpr double control_max = Constant::mass * Constant::g / 2;
-                constexpr int prev_steps_init = 5;
+                constexpr int prev_steps_init = horizon - 1;
                 bool use_learned = false;
             }
             namespace SymNN
@@ -141,18 +143,21 @@ namespace quadrotor
 #ifdef NUM_OPT
                 std::unique_ptr<symnn::SymNN> learned_model;
 #endif
-                bool gradient_based = false;
+                bool gradient_based = true;
+                bool use_all_data = true;
                 // Gradient-based only parameters
-                constexpr int epochs = 100000;
-                constexpr double learning_rate = 0.0001;
+                constexpr int epochs = 2000;
+                constexpr double learning_rate = 0.01;
                 constexpr double momentum = 0;
+                constexpr double max_grad = 1.0;
             }
             namespace Train
             {
-                constexpr bool bad_episode_stop = true;              // whether to stop bad episodes
-                constexpr int collection_steps = 60;                 // number of steps to collect data for training (per episode)
-                constexpr int episodes = 10;                         // number of episodes to train
-                constexpr int runs = 5;                              // number of runs to train (for averaging)
+                constexpr bool bad_episode_stop = true;       // whether to stop bad episodes
+                constexpr double bad_episode_threshold = 0.2; // threshold for angle between World Z and Quadrotor Z axis
+                constexpr int collection_steps = 50;         // number of steps to collect data for training (per episode)
+                constexpr int episodes = 10;                  // number of episodes to train
+                constexpr int runs = 1;                       // number of runs to train (for averaging)
             }
         }
 
