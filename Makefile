@@ -38,5 +38,11 @@ build-quad: main_quad.cpp
 run-quad: build/main_quad
 	./build/main_quad
 
+build-quad-pre: main_quad_pretrained.cpp
+	$(CXX) $(INCLUDES_NUM) main_quad_pretrained.cpp -o build/main_quad_pretrained $(CXXFLAGS) $(CASADI_FLAGS)
+
+run-quad-pre: build/main_quad_pretrained
+	./build/main_quad_pretrained
+
 clean:
 	rm -f build/*

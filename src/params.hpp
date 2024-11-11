@@ -84,7 +84,7 @@ namespace pq
             }
             namespace Train
             {
-                constexpr bool big_angle_stop = true;               // whether to stop training after angle values get too big
+                constexpr bool big_angle_stop = true;                // whether to stop training after angle values get too big
                 constexpr bool big_angle_view = false;               // whether to keep visualizing after angle values get too big
                 constexpr double big_angle_threshold = 3 * M_PI / 8; // threshold for big angle values
                 constexpr int collection_steps = 150;                // number of steps to collect data for training (per episode)
@@ -153,11 +153,12 @@ namespace quadrotor
             }
             namespace Train
             {
-                constexpr bool bad_episode_stop = true;       // whether to stop bad episodes
-                constexpr double bad_episode_threshold = 0.2; // threshold for angle between World Z and Quadrotor Z axis
-                constexpr int collection_steps = 50;         // number of steps to collect data for training (per episode)
-                constexpr int episodes = 10;                  // number of episodes to train
-                constexpr int runs = 1;                       // number of runs to train (for averaging)
+                bool bad_episode_stop = true;                       // whether to stop bad episodes
+                constexpr double bad_episode_angle_threshold = 0.2; // threshold for angle between World Z and Quadrotor Z axis
+                constexpr double bad_episode_speed_threshold = 25;  // threshold for speed
+                constexpr int collection_steps = 50;                // number of steps to collect data for training (per episode)
+                constexpr int episodes = 20;                        // number of episodes to train
+                constexpr int runs = 1;                             // number of runs to train (for averaging)
             }
         }
 

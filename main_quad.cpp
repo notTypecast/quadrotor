@@ -12,14 +12,14 @@
 #include "src/train/Episode.hpp"
 
 int main()
-{  
+{
     quadrotor::Value::target << quadrotor::Value::Param::NumOpt::target_x, quadrotor::Value::Param::NumOpt::target_y, quadrotor::Value::Param::NumOpt::target_z, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 
     symnn::Params params;
     params.input_size = 17;
     params.output_size = 6;
     params.hidden_layers = std::vector<int>{4};
-    params.activation = symnn::activation::Sigmoid;
+    params.activation = "sigmoid";
     params.initializer = symnn::initializers::NXavier;
     params.gradient_based = quadrotor::Value::Param::SymNN::gradient_based;
     params.epochs = quadrotor::Value::Param::SymNN::epochs;
@@ -31,10 +31,12 @@ int main()
     double masses[] = {1, 2, 4};
     std::vector<std::vector<double>> errors_per_episode(quadrotor::Value::Param::Train::runs * quadrotor::Value::Param::Train::episodes);
 
-    Eigen::MatrixXd train_input, train_target;
+    // Eigen::MatrixXd train_input, train_target;
 
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < sizeof(masses) / sizeof(masses[0]); ++i)
     {
+        Eigen::MatrixXd train_input, train_target;
+
         quadrotor::num_opt::Params params;
         params.m = masses[i];
         params.I = masses[i] / quadrotor::Value::Constant::mass * quadrotor::Value::Constant::I;
@@ -50,7 +52,6 @@ int main()
             quadrotor::Value::Param::NumOpt::use_learned = false;
             quadrotor::train::Episode episode;
 
-            int run_idx = j * quadrotor::Value::Param::Train::episodes;
             for (int k = 0; k < quadrotor::Value::Param::Train::episodes; ++k)
             {
                 std::cout << "Episode " << k << std::endl;
@@ -80,7 +81,7 @@ int main()
                 }
 
                 quadrotor::Value::Param::SymNN::learned_model->train(train_input, train_target);
-                
+
                 /*
                 std::cout << "NN expected:" << std::endl;
                 std::cout << episode.get_train_target().block(0, 0, 6, episode.get_stop_step()).transpose() << std::endl;
@@ -89,12 +90,17 @@ int main()
                 {
                     std::cout << quadrotor::Value::Param::SymNN::learned_model->forward(episode.get_train_input().col(l)).transpose() << std::endl;
                 }*/
-                
+
                 quadrotor::Value::Param::NumOpt::use_learned = true;
             }
 
             std::cout << "Episode with completed training" << std::endl;
             episode.run(optimizer);
+
+            std::string mass_str = std::to_string(masses[i]);
+            mass_str.erase(mass_str.find_last_not_of('0') + 1, std::string::npos);
+            mass_str.erase(mass_str.find_last_not_of('.') + 1, std::string::npos);
+            quadrotor::Value::Param::SymNN::learned_model->save("quad_model_" + std::to_string(masses[i]) + "_" + std::to_string(j));
         }
     }
 

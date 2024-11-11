@@ -48,7 +48,7 @@ int main(int argc, char **argv)
     params.input_size = 8;
     params.output_size = 3;
     params.hidden_layers = std::vector<int>{4};
-    params.activation = symnn::activation::Sigmoid;
+    params.activation = "sigmoid";
     params.initializer = symnn::initializers::NXavier;
     params.gradient_based = pq::Value::Param::SymNN::gradient_based;
     params.epochs = pq::Value::Param::SymNN::epochs;

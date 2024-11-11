@@ -3,6 +3,8 @@
 
 #include <vector>
 #include <functional>
+#include <string>
+#include <unordered_map>
 
 #include <Eigen/Core>
 #include <casadi/casadi.hpp>
@@ -44,6 +46,14 @@ namespace symnn
         {
             return tanh(x);
         }
+
+        std::unordered_map<std::string, std::function<MX(const MX &)>> activation_map = {
+            {"sigmoid", Sigmoid},
+            {"softmax", Softmax},
+            {"relu", Relu},
+            {"lrelu", Lrelu},
+            {"elu", ELU},
+            {"tanh", Tanh}};
     }
 
     namespace initializers
@@ -100,7 +110,7 @@ namespace symnn
         int input_size;
         int output_size;
         std::vector<int> hidden_layers;
-        std::function<MX(MX)> activation = activation::Sigmoid;
+        std::string activation;
         std::function<DM(int, int, int)> initializer = initializers::NXavier;
         bool gradient_based = true;
         // Gradient-based only parameters
@@ -121,83 +131,70 @@ namespace symnn
                                       _learning_rate(params.learning_rate),
                                       _momentum(params.momentum),
                                       _max_grad(params.max_grad),
+                                      _activation_name(params.activation),
                                       _initializer(params.initializer)
         {
-            _X = MX::sym("X", _input_size);
-            _Y = MX::sym("Y", _output_size);
+            _construct(params.hidden_layers);
+        }
 
-            std::vector<MX> all_params;
-            all_params.push_back(_X);
+        SymNN(const std::string &filename, Params &params) : _gradient_based(params.gradient_based),
+                                                             _epochs(params.epochs),
+                                                             _learning_rate(params.learning_rate),
+                                                             _momentum(params.momentum),
+                                                             _max_grad(params.max_grad),
+                                                             _initializer(params.initializer)
+        {
+            std::ifstream file(filename);
 
-            std::vector<MX> flat_params;
+            file >> _activation_name;
+            file >> _input_size;
+            file >> _output_size;
 
-            _W.push_back(MX::sym("W0", params.hidden_layers[0], _input_size));
-            _b.push_back(MX::sym("b0", params.hidden_layers[0]));
-            MX prev = params.activation(mtimes(_W[0], _X) + _b[0]);
+            params.hidden_layers.clear();
 
-            all_params.push_back(_W[0]);
-            all_params.push_back(_b[0]);
+            std::string line;
+            std::getline(file, line);
+            std::getline(file, line);
+            std::istringstream iss(line);
 
-            flat_params.push_back(reshape(_W[0], -1, 1));
-            flat_params.push_back(_b[0]);
-
-            for (int i = 1; i < params.hidden_layers.size(); ++i)
+            int num;
+            while (iss >> num)
             {
-                _W.push_back(MX::sym("W" + std::to_string(i), params.hidden_layers[i], params.hidden_layers[i - 1]));
-                _b.push_back(MX::sym("b" + std::to_string(i), params.hidden_layers[i]));
-                prev = params.activation(mtimes(_W[i], prev) + _b[i]);
-
-                all_params.push_back(_W[i]);
-                all_params.push_back(_b[i]);
-
-                flat_params.push_back(reshape(_W[i], -1, 1));
-                flat_params.push_back(_b[i]);
+                params.hidden_layers.push_back(num);
             }
 
-            _W.push_back(MX::sym("Wout", params.output_size, params.hidden_layers.back()));
-            _b.push_back(MX::sym("bout", params.output_size));
+            int prev_size = _input_size;
+            double val;
 
-            all_params.push_back(_W.back());
-            all_params.push_back(_b.back());
+            params.hidden_layers.push_back(_output_size);
 
-            flat_params.push_back(reshape(_W.back(), -1, 1));
-            flat_params.push_back(_b.back());
-
-            MX flat_params_var = vertcat(flat_params);
-
-            _total_size = flat_params_var.size1();
-
-            _out = mtimes(_W.back(), prev) + _b.back();
-            _out_fn = Function("out", all_params, {_out});
-
-            _loss = sumsqr(_Y - _out);
-
-            _gradients = gradient(_loss, flat_params_var);
-            _gradient_fn = Function("gradient_fn", {flat_params_var, _X, _Y}, {_gradients});
-
-            for (int i = 1; i < all_params.size() - 2; ++i)
+            for (int i = 0; i < params.hidden_layers.size(); ++i)
             {
-                if (i % 2)
+                _nn_values.push_back(DM(params.hidden_layers[i], prev_size));
+
+                for (int j = 0; j < params.hidden_layers[i]; ++j)
                 {
-                    _nn_values.push_back(_initializer(all_params[i].size1(), all_params[i].size2(), all_params[i + 2].size1()));
+                    for (int k = 0; k < prev_size; ++k)
+                    {
+                        file >> val;
+                        _nn_values.back()(j, k) = val;
+                    }
                 }
-                else
+
+                _nn_values.push_back(DM(params.hidden_layers[i], 1));
+
+                for (int j = 0; j < params.hidden_layers[i]; ++j)
                 {
-                    _nn_values.push_back(DM::rand(all_params[i].size1(), all_params[i].size2()));
+                    file >> val;
+                    _nn_values.back()(j) = val;
                 }
+
+                prev_size = params.hidden_layers[i];
             }
 
-            _nn_values.push_back(DM::rand(all_params[all_params.size() - 2].size1(), all_params[all_params.size() - 2].size2()));
-            _nn_values.push_back(DM::rand(all_params[all_params.size() - 1].size1(), all_params[all_params.size() - 1].size2()));
-
-            std::vector<MX> opt_vars(all_params.size() - 1);
-            for (int i = 0; i < _W.size(); ++i)
-            {
-                opt_vars[2 * i] = reshape(_W[i], -1, 1);
-                opt_vars[2 * i + 1] = _b[i];
-            }
-
-            _opt_vars = vertcat(opt_vars);
+            params.hidden_layers.pop_back();
+            
+            _construct(params.hidden_layers);
         }
 
         Eigen::VectorXd forward(const Eigen::VectorXd &input)
@@ -272,6 +269,43 @@ namespace symnn
             }
         }
 
+        void save(const std::string &filename)
+        {
+            std::ofstream file(filename);
+
+            file << _activation_name << std::endl;
+            file << _input_size << std::endl;
+            file << _output_size << std::endl;
+
+            for (int i = 0; i < _W.size() - 1; ++i)
+            {
+                file << _W[i].size1();
+                if (i < _W.size() - 1)
+                {
+                    file << " ";
+                }
+            }
+            file << std::endl;
+
+            for (int i = 0; i < _nn_values.size(); ++i)
+            {
+                for (int j = 0; j < _nn_values[i].size1(); ++j)
+                {
+                    for (int k = 0; k < _nn_values[i].size2(); ++k)
+                    {
+                        file << _nn_values[i](j, k);
+                        if (k < _nn_values[i].size2() - 1)
+                        {
+                            file << " ";
+                        }
+                    }
+                    file << std::endl;
+                }
+            }
+
+            file.close();
+        }
+
     protected:
         bool _gradient_based;
         int _input_size, _output_size;
@@ -279,6 +313,7 @@ namespace symnn
         double _learning_rate, _momentum;
         double _max_grad;
         int _total_size;
+        std::string _activation_name;
         std::function<DM(int, int, int)> _initializer;
         MX _X, _Y;
         std::vector<MX> _W, _b;
@@ -292,6 +327,94 @@ namespace symnn
         MX _out_substituted;
 
         MX _opt_vars;
+
+        void _construct(const std::vector<int> &hidden_layers)
+        {
+            if (activation::activation_map.find(_activation_name) == activation::activation_map.end())
+            {
+                _activation_name = "sigmoid";
+            }
+
+            std::function<MX(const MX &)> activation = activation::activation_map[_activation_name];
+
+            _X = MX::sym("X", _input_size);
+            _Y = MX::sym("Y", _output_size);
+
+            std::vector<MX> all_params;
+            all_params.push_back(_X);
+
+            std::vector<MX> flat_params;
+
+            MX prev = _X;
+
+            for (int i = 0; i < hidden_layers.size(); ++i)
+            {
+                _W.push_back(MX::sym("W" + std::to_string(i), hidden_layers[i], prev.size1()));
+                _b.push_back(MX::sym("b" + std::to_string(i), hidden_layers[i]));
+                prev = activation(mtimes(_W[i], prev) + _b[i]);
+
+                all_params.push_back(_W[i]);
+                all_params.push_back(_b[i]);
+
+                flat_params.push_back(reshape(_W[i], -1, 1));
+                flat_params.push_back(_b[i]);
+            }
+
+            _W.push_back(MX::sym("Wout", _output_size, hidden_layers.back()));
+            _b.push_back(MX::sym("bout", _output_size));
+
+            all_params.push_back(_W.back());
+            all_params.push_back(_b.back());
+
+            flat_params.push_back(reshape(_W.back(), -1, 1));
+            flat_params.push_back(_b.back());
+
+            MX flat_params_var = vertcat(flat_params);
+
+            _total_size = flat_params_var.size1();
+
+            _out = mtimes(_W.back(), prev) + _b.back();
+            _out_fn = Function("out", all_params, {_out});
+
+            _loss = sumsqr(_Y - _out);
+
+            _gradients = gradient(_loss, flat_params_var);
+            _gradient_fn = Function("gradient_fn", {flat_params_var, _X, _Y}, {_gradients});
+
+            std::vector<MX> opt_vars(all_params.size() - 1);
+            for (int i = 0; i < _W.size(); ++i)
+            {
+                opt_vars[2 * i] = reshape(_W[i], -1, 1);
+                opt_vars[2 * i + 1] = _b[i];
+            }
+
+            _opt_vars = vertcat(opt_vars);
+
+            if (_nn_values.empty())
+            {
+                for (int i = 1; i < all_params.size() - 2; ++i)
+                {
+                    if (i % 2)
+                    {
+                        _nn_values.push_back(_initializer(all_params[i].size1(), all_params[i].size2(), all_params[i + 2].size1()));
+                    }
+                    else
+                    {
+                        _nn_values.push_back(DM::rand(all_params[i].size1(), all_params[i].size2()));
+                    }
+                }
+
+                _nn_values.push_back(DM::rand(all_params[all_params.size() - 2].size1(), all_params[all_params.size() - 2].size2()));
+                _nn_values.push_back(DM::rand(all_params[all_params.size() - 1].size1(), all_params[all_params.size() - 1].size2()));
+            }
+
+            _out_substituted = _out;
+            for (int i = 0; i < _W.size(); ++i)
+            {
+                _out_substituted = substitute(_out_substituted, _W[i], _nn_values[2 * i]);
+                _out_substituted = substitute(_out_substituted, _b[i], _nn_values[2 * i + 1]);
+            }
+        }
 
         MX _instance_loss(const Eigen::VectorXd &input, const Eigen::VectorXd &target)
         {

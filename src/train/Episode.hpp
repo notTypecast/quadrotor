@@ -183,7 +183,9 @@ namespace quadrotor
                 {
                     Eigen::VectorXd init_state = q.get_state();
 
-                    if ((q.get_orientation() * Eigen::Vector3d::UnitZ()).dot(Eigen::Vector3d::UnitZ()) < quadrotor::Value::Param::Train::bad_episode_threshold)
+                    if (quadrotor::Value::Param::Train::bad_episode_stop &&
+                            ((q.get_orientation() * Eigen::Vector3d::UnitZ()).dot(Eigen::Vector3d::UnitZ()) < quadrotor::Value::Param::Train::bad_episode_angle_threshold ||
+                        q.get_state().segment(7, 6).cwiseAbs().maxCoeff() > quadrotor::Value::Param::Train::bad_episode_speed_threshold))
                     {
                         _stop_step = i - 2 < 0 ? 0 : i - 2;
                         break;
@@ -198,6 +200,7 @@ namespace quadrotor
                     }
                     catch (std::exception &e)
                     {
+                        std::cout << e.what() << std::endl;
                         std::cout << "Optimization failed, stopping episode" << std::endl;
                         _stop_step = i - 2 < 0 ? 0 : i - 2;
                         break;
