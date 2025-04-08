@@ -164,18 +164,36 @@ namespace quadrotor
         class Episode
         {
         public:
-            Episode()
+            Episode(const std::string &filename = "")
             {
                 _train_input = Eigen::MatrixXd(17, quadrotor::Value::Param::Train::collection_steps);
                 _train_target = Eigen::MatrixXd(6, quadrotor::Value::Param::Train::collection_steps);
+
+                if (!filename.empty())
+                {
+                    _filestream = std::ofstream(filename, std::ios_base::app);
+                }
             }
 
-            std::vector<double> run(pq::Optimizer &optimizer)
+            ~Episode()
+            {
+                if (_filestream.is_open())
+                {
+                    _filestream.close();
+                }
+            }
+
+            std::vector<double> run(pq::Optimizer &optimizer, bool full_run = false)
             {
                 _stop_step = -1;
                 optimizer.reinit();
 
                 quadrotor::sim::Quadrotor q(quadrotor::Value::Constant::mass, quadrotor::Value::Constant::I, quadrotor::Value::Constant::length);
+
+                if (_filestream.is_open())
+                {
+                    _filestream << "TARGET " << quadrotor::Value::target.segment(0, 3).transpose() << std::endl;
+                }
 
                 std::vector<double> errors(quadrotor::Value::Param::Train::collection_steps, 0);
 
@@ -183,20 +201,36 @@ namespace quadrotor
                 {
                     Eigen::VectorXd init_state = q.get_state();
 
-                    if (quadrotor::Value::Param::Train::bad_episode_stop &&
-                            ((q.get_orientation() * Eigen::Vector3d::UnitZ()).dot(Eigen::Vector3d::UnitZ()) < quadrotor::Value::Param::Train::bad_episode_angle_threshold ||
-                        q.get_state().segment(7, 6).cwiseAbs().maxCoeff() > quadrotor::Value::Param::Train::bad_episode_speed_threshold))
+                    if (!full_run && quadrotor::Value::Param::Train::bad_episode_stop)
                     {
-                        _stop_step = i - 2 < 0 ? 0 : i - 2;
-                        break;
+                        Eigen::Vector3d normal = q.get_normal();
+                        double angle = acos(normal[2]);
+
+                        if (angle > quadrotor::Value::Param::Train::bad_episode_angle_threshold ||
+                            q.get_state().segment(7, 6).cwiseAbs().maxCoeff() > quadrotor::Value::Param::Train::bad_episode_speed_threshold)
+                        {
+                            _stop_step = i - 2 < 0 ? 0 : i - 2;
+                            break;
+                        }
                     }
-                    std::cout << "Current state: " << init_state.transpose() << std::endl;
+
+                    if (_filestream.is_open())
+                    {
+                        _filestream << init_state.transpose() << std::endl;
+                    }
+                    else
+                    {
+                        std::cout << "Current state: " << init_state.transpose() << std::endl;
+                    }
 
                     Eigen::Vector4d controls;
 
                     try
                     {
+                        auto start = std::chrono::high_resolution_clock::now();
                         controls = optimizer.next(init_state, quadrotor::Value::target);
+                        auto elapsed = std::chrono::high_resolution_clock::now() - start;
+                        std::cout << "Control frequency: " << 1.0 / std::chrono::duration<double>(elapsed).count() << " Hz" << std::endl;
                     }
                     catch (std::exception &e)
                     {
@@ -240,6 +274,7 @@ namespace quadrotor
             }
 
         protected:
+            std::ofstream _filestream;
             Eigen::MatrixXd _train_input;
             Eigen::MatrixXd _train_target;
             int _stop_step = -1;

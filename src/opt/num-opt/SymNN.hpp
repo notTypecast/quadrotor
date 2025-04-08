@@ -5,6 +5,8 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include <random>
+#include <chrono>
 
 #include <Eigen/Core>
 #include <casadi/casadi.hpp>
@@ -15,6 +17,27 @@ using namespace casadi;
 
 namespace symnn
 {
+    /* randn_DM function
+     * Generate a matrix of random numbers ~ N(mean, std)
+     */
+    DM randn_DM(int rows, int cols, double mean, double std)
+    {
+        std::default_random_engine gen(time(NULL));
+        std::normal_distribution<double> dist(mean, std);
+        DM r(rows, cols);
+        
+        for (int i = 0; i < rows; ++i)
+        {
+            for (int j = 0; j < cols; ++j)
+            {
+                r(i, j) = dist(gen);
+            }
+        }
+
+        return r;
+    }
+
+
     namespace activation
     {
         MX Sigmoid(const MX &x)
@@ -47,13 +70,19 @@ namespace symnn
             return tanh(x);
         }
 
+        MX Gaussian(const MX &x)
+        {
+            return exp(-x*x);
+        }
+
         std::unordered_map<std::string, std::function<MX(const MX &)>> activation_map = {
             {"sigmoid", Sigmoid},
             {"softmax", Softmax},
             {"relu", Relu},
             {"lrelu", Lrelu},
             {"elu", ELU},
-            {"tanh", Tanh}};
+            {"tanh", Tanh},
+            {"gaussian", Gaussian}};
     }
 
     namespace initializers
@@ -63,33 +92,38 @@ namespace symnn
          *  also represents the number of neurons in the current layer
          * cols: number of columns in the matrix
          *  also represents the number of neurons in the previous layer (input size)
-         * next: number of neurons in the next layer (output size)
          */
 
         // Zero initialization
-        // next is used for signature only
-        DM Zero(int rows, int cols, int next)
+        DM Zero(int rows, int cols)
         {
             return DM::zeros(rows, cols);
         }
 
-        // Random initialization
-        // next is used for signature only
-        DM Random(int rows, int cols, int next)
+        // Uniform random initialization
+        // ~U(0, 1)
+        DM Random(int rows, int cols)
         {
             return DM::rand(rows, cols);
         }
 
-        // He initialization
-        // next is used for signature only
-        DM He(int rows, int cols, int next)
+        // LeCun initialization
+        // ~N(0, 1 / n_in)
+        DM LeCun(int rows, int cols)
         {
-            return DM::rand(rows, cols) * sqrt(2.0 / rows);
+            return randn_DM(rows, cols, 0.0, 1.0 / cols);
+        }
+
+        // He initialization
+        // ~N(0, sqrt(2 / n_in))
+        DM He(int rows, int cols)
+        {
+            return randn_DM(rows, cols, 0.0, sqrt(2.0 / cols));
         }
 
         // Xavier initialization
-        // next is used for signature only
-        DM Xavier(int rows, int cols, int next)
+        // ~U(-1 / sqrt(n_in), 1 / sqrt(n_in))
+        DM Xavier(int rows, int cols)
         {
             double lower = -sqrt(1 / cols);
             double upper = -lower;
@@ -97,13 +131,21 @@ namespace symnn
         }
 
         // Normalized Xavier initialization
-        DM NXavier(int rows, int cols, int next)
+        // ~U(-sqrt(6) / sqrt(n_in + n_out), sqrt(6) / sqrt(n_in + n_out))
+        DM NXavier(int rows, int cols)
         {
-            double lower = -sqrt(6.0 / (cols + next));
+            double lower = -sqrt(6.0 / (cols + rows));
             double upper = -lower;
             return DM::rand(rows, cols) * (upper - lower) + lower;
         }
     }
+
+    enum OPTIMIZER
+    {
+        GD,
+        ADAM,
+        IPOPT
+    };
 
     struct Params
     {
@@ -111,13 +153,17 @@ namespace symnn
         int output_size;
         std::vector<int> hidden_layers;
         std::string activation;
-        std::function<DM(int, int, int)> initializer = initializers::NXavier;
-        bool gradient_based = true;
+        std::function<DM(int, int)> initializer = initializers::NXavier;
+        OPTIMIZER optimizer = GD;
         // Gradient-based only parameters
-        int epochs = 10000;
+        int epochs = 1000;
         double learning_rate = 0.01;
         double momentum = 0;
         double max_grad = -1;
+        // ADAM parameters
+        double beta1 = 0.9;
+        double beta2 = 0.999;
+        double epsilon = 1e-8;
     };
 
     // Fully connected NN
@@ -126,22 +172,28 @@ namespace symnn
     public:
         SymNN(const Params &params) : _input_size(params.input_size),
                                       _output_size(params.output_size),
-                                      _gradient_based(params.gradient_based),
+                                      _optimizer(params.optimizer),
                                       _epochs(params.epochs),
                                       _learning_rate(params.learning_rate),
                                       _momentum(params.momentum),
                                       _max_grad(params.max_grad),
+                                      _beta1(params.beta1),
+                                      _beta2(params.beta2),
+                                      _epsilon(params.epsilon),
                                       _activation_name(params.activation),
                                       _initializer(params.initializer)
         {
             _construct(params.hidden_layers);
         }
 
-        SymNN(const std::string &filename, Params &params) : _gradient_based(params.gradient_based),
+        SymNN(const std::string &filename, Params &params) : _optimizer(params.optimizer),
                                                              _epochs(params.epochs),
                                                              _learning_rate(params.learning_rate),
                                                              _momentum(params.momentum),
                                                              _max_grad(params.max_grad),
+                                                             _beta1(params.beta1),
+                                                             _beta2(params.beta2),
+                                                             _epsilon(params.epsilon),
                                                              _initializer(params.initializer)
         {
             std::ifstream file(filename);
@@ -193,7 +245,7 @@ namespace symnn
             }
 
             params.hidden_layers.pop_back();
-            
+
             _construct(params.hidden_layers);
         }
 
@@ -227,13 +279,17 @@ namespace symnn
 
         void train(const Eigen::MatrixXd &input, const Eigen::MatrixXd &target, int stop_col = -1)
         {
-            if (_gradient_based)
+            switch (_optimizer)
             {
+            case GD:
                 _train_gd(input, target, stop_col);
-            }
-            else
-            {
+                break;
+            case ADAM:
+                _train_adam(input, target, stop_col);
+                break;
+            case IPOPT:
                 _train_ipopt(input, target, stop_col);
+                break;
             }
 
             _out_substituted = _out;
@@ -254,7 +310,7 @@ namespace symnn
                 }
                 else
                 {
-                    _nn_values[i] = _initializer(_nn_values[i].size1(), _nn_values[i].size2(), _nn_values[i + 2].size1());
+                    _nn_values[i] = _initializer(_nn_values[i].size1(), _nn_values[i].size2());
                 }
             }
 
@@ -307,14 +363,15 @@ namespace symnn
         }
 
     protected:
-        bool _gradient_based;
+        OPTIMIZER _optimizer;
         int _input_size, _output_size;
         int _epochs;
         double _learning_rate, _momentum;
         double _max_grad;
+        double _beta1, _beta2, _epsilon;
         int _total_size;
         std::string _activation_name;
-        std::function<DM(int, int, int)> _initializer;
+        std::function<DM(int, int)> _initializer;
         MX _X, _Y;
         std::vector<MX> _W, _b;
         MX _out;
@@ -396,7 +453,7 @@ namespace symnn
                 {
                     if (i % 2)
                     {
-                        _nn_values.push_back(_initializer(all_params[i].size1(), all_params[i].size2(), all_params[i + 2].size1()));
+                        _nn_values.push_back(_initializer(all_params[i].size1(), all_params[i].size2()));
                     }
                     else
                     {
@@ -436,6 +493,61 @@ namespace symnn
             return loss_sub;
         }
 
+        void _train_adam(const Eigen::MatrixXd &input, const Eigen::MatrixXd &target, int stop_col = -1)
+        {
+            DM current_params;
+            for (int i = 0; i < _nn_values.size(); i += 2)
+            {
+                current_params = vertcat(current_params, reshape(_nn_values[i], -1, 1));
+                current_params = vertcat(current_params, _nn_values[i + 1]);
+            }
+
+            DM X = DM(input.rows(), (stop_col == -1 ? input.cols() : stop_col));
+            for (int i = 0; i < input.rows(); ++i)
+            {
+                for (int j = 0; j < (stop_col == -1 ? input.cols() : stop_col); ++j)
+                {
+                    X(i, j) = input(i, j);
+                }
+            }
+
+            DM Y = DM(target.rows(), (stop_col == -1 ? target.cols() : stop_col));
+            for (int i = 0; i < target.rows(); ++i)
+            {
+                for (int j = 0; j < (stop_col == -1 ? input.cols() : stop_col); ++j)
+                {
+                    Y(i, j) = target(i, j);
+                }
+            }
+
+            DM m = DM::zeros(current_params.size1(), current_params.size2());
+            DM v = DM::zeros(current_params.size1(), current_params.size2());
+            int t = 1;
+
+            for (int epoch = 0; epoch < _epochs; ++epoch)
+            {
+                for (int j = 0; j < (stop_col == -1 ? input.cols() : stop_col); ++j)
+                {
+                    std::vector<DM> params = {current_params, X(Slice(), j), Y(Slice(), j)};
+
+                    DM grad_values = _gradient_fn(params)[0];
+
+                    m = (_beta1 * m + (1 - _beta1) * grad_values) / (1 - pow(_beta1, t));
+                    v = (_beta2 * v + (1 - _beta2) * pow(grad_values, 2)) / (1 - pow(_beta2, t++));
+
+                    current_params -= _learning_rate * m / (sqrt(v) + _epsilon);
+                }
+            }
+
+            int offset = 0;
+            for (int i = 0; i < _nn_values.size(); ++i)
+            {
+                int param_size = _nn_values[i].size1() * _nn_values[i].size2();
+                _nn_values[i] = reshape(current_params(Slice(offset, offset + param_size), 0), _nn_values[i].size1(), _nn_values[i].size2());
+                offset += param_size;
+            }
+        }
+
         void _train_gd(const Eigen::MatrixXd &input, const Eigen::MatrixXd &target, int stop_col = -1)
         {
             DM current_params;
@@ -447,19 +559,19 @@ namespace symnn
             }
             // std::cout << current_params << std::endl;
 
-            DM X = DM(input.rows(), input.cols());
+            DM X = DM(input.rows(), (stop_col == -1 ? input.cols() : stop_col));
             for (int i = 0; i < input.rows(); ++i)
             {
-                for (int j = 0; j < input.cols(); ++j)
+                for (int j = 0; j < (stop_col == -1 ? input.cols() : stop_col); ++j)
                 {
                     X(i, j) = input(i, j);
                 }
             }
 
-            DM Y = DM(target.rows(), target.cols());
+            DM Y = DM(target.rows(), (stop_col == -1 ? target.cols() : stop_col));
             for (int i = 0; i < target.rows(); ++i)
             {
-                for (int j = 0; j < target.cols(); ++j)
+                for (int j = 0; j < (stop_col == -1 ? input.cols() : stop_col); ++j)
                 {
                     Y(i, j) = target(i, j);
                 }

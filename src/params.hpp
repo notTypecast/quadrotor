@@ -75,7 +75,6 @@ namespace pq
 #ifdef NUM_OPT
                 std::unique_ptr<symnn::SymNN> learned_model;
 #endif
-                bool gradient_based = true;
                 // Gradient-based only parameters
                 constexpr int epochs = 2000;
                 constexpr double learning_rate = 0.01;
@@ -132,9 +131,9 @@ namespace quadrotor
                 constexpr int target_x = 4;
                 constexpr int target_y = 4;
                 constexpr int target_z = 2;
-                constexpr int horizon = 12;
+                constexpr int horizon = 8;
                 constexpr double dt = Sim::dt;
-                constexpr double control_max = Constant::mass * Constant::g / 2;
+                constexpr double control_max = 7 * Constant::mass * Constant::g / 24;
                 constexpr int prev_steps_init = horizon - 1;
                 bool use_learned = false;
             }
@@ -143,7 +142,6 @@ namespace quadrotor
 #ifdef NUM_OPT
                 std::unique_ptr<symnn::SymNN> learned_model;
 #endif
-                bool gradient_based = true;
                 bool use_all_data = true;
                 // Gradient-based only parameters
                 constexpr int epochs = 2000;
@@ -154,10 +152,10 @@ namespace quadrotor
             namespace Train
             {
                 bool bad_episode_stop = true;                       // whether to stop bad episodes
-                constexpr double bad_episode_angle_threshold = 0.2; // threshold for angle between World Z and Quadrotor Z axis
-                constexpr double bad_episode_speed_threshold = 25;  // threshold for speed
-                constexpr int collection_steps = 50;                // number of steps to collect data for training (per episode)
-                constexpr int episodes = 20;                        // number of episodes to train
+                constexpr double bad_episode_angle_threshold = 1.0; // threshold for angle between World Z and Quadrotor Z axis
+                constexpr double bad_episode_speed_threshold = 15.0;  // threshold for speed
+                constexpr int collection_steps = 150;                // number of steps to collect data for training (per episode)
+                constexpr int episodes = 50;                        // number of episodes to train
                 constexpr int runs = 1;                             // number of runs to train (for averaging)
             }
         }

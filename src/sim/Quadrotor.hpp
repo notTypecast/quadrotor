@@ -103,6 +103,11 @@ namespace quadrotor
                 return _last_ddq;
             }
 
+            Eigen::Vector3d get_normal()
+            {
+                return get_orientation() * Eigen::Vector3d::UnitZ();
+            }
+
         protected:
             double _m, _l;
             double _Kf, _Kt;

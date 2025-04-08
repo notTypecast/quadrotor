@@ -50,7 +50,6 @@ int main(int argc, char **argv)
     params.hidden_layers = std::vector<int>{4};
     params.activation = "sigmoid";
     params.initializer = symnn::initializers::NXavier;
-    params.gradient_based = pq::Value::Param::SymNN::gradient_based;
     params.epochs = pq::Value::Param::SymNN::epochs;
     params.learning_rate = pq::Value::Param::SymNN::learning_rate;
     params.momentum = pq::Value::Param::SymNN::momentum;

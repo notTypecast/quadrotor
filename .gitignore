@@ -5,3 +5,4 @@ variables.sh
 main.cpp
 main
 quad_model_*
+src/train/data/*
