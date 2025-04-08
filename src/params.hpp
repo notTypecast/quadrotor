@@ -131,7 +131,7 @@ namespace quadrotor
                 constexpr int target_x = 4;
                 constexpr int target_y = 4;
                 constexpr int target_z = 2;
-                constexpr int horizon = 8;
+                constexpr int horizon = 6;
                 constexpr double dt = Sim::dt;
                 constexpr double control_max = 7 * Constant::mass * Constant::g / 24;
                 constexpr int prev_steps_init = horizon - 1;
@@ -152,7 +152,7 @@ namespace quadrotor
             namespace Train
             {
                 bool bad_episode_stop = true;                       // whether to stop bad episodes
-                constexpr double bad_episode_angle_threshold = 1.0; // threshold for angle between World Z and Quadrotor Z axis
+                constexpr double bad_episode_angle_threshold = 1; // threshold for angle between World Z and Quadrotor Z axis
                 constexpr double bad_episode_speed_threshold = 15.0;  // threshold for speed
                 constexpr int collection_steps = 150;                // number of steps to collect data for training (per episode)
                 constexpr int episodes = 50;                        // number of episodes to train

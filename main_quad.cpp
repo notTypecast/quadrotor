@@ -27,13 +27,15 @@ int main()
     params.momentum = quadrotor::Value::Param::SymNN::momentum;
     params.max_grad = quadrotor::Value::Param::SymNN::max_grad;
     quadrotor::Value::Param::SymNN::learned_model = std::make_unique<symnn::SymNN>(params);
+    
     /*
     symnn::Params params;
-    quadrotor::Value::Param::SymNN::learned_model = std::make_unique<symnn::SymNN>("src/train/models/quad_model_4.0_0", params);
+    quadrotor::Value::Param::SymNN::learned_model = std::make_unique<symnn::SymNN>("src/train/models/quad_model_4_0_50eps", params);
     */
+    
 
 
-    double masses[] = {4};
+    double masses[] = {1, 2, 4};
     std::vector<std::vector<double>> errors_per_episode(quadrotor::Value::Param::Train::runs * quadrotor::Value::Param::Train::episodes);
 
     // Eigen::MatrixXd train_input, train_target;

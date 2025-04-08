@@ -20,6 +20,7 @@ ax.set_zlim(-5, 5)
 quadrotor = []
 
 def visualize(pos, quat, vel=None):
+
     for obj in quadrotor:
         obj.remove()
 
@@ -46,6 +47,10 @@ def visualize(pos, quat, vel=None):
 
     line1, = ax.plot3D([rotated_points[0][0], rotated_points[1][0]], [rotated_points[0][1], rotated_points[1][1]], [rotated_points[0][2], rotated_points[1][2]], c=(0.7, 0.2, 0.3), linewidth=4)
     line2, = ax.plot3D([rotated_points[2][0], rotated_points[3][0]], [rotated_points[2][1], rotated_points[3][1]], [rotated_points[2][2], rotated_points[3][2]], c=(0.7, 0.2, 0.3), linewidth=4)
+
+    if vel is not None:
+        vel = np.array(vel)
+        vel = r.apply(vel)
 
     for i in range(4):        
         line, = ax.plot3D([rotated_points[i][0], rotated_points[i + 4][0]], [rotated_points[i][1], rotated_points[i + 4][1]], [rotated_points[i][2], rotated_points[i + 4][2]], c=(0.7, 0.2, 0.3), linewidth=4)

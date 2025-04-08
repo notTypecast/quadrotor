@@ -292,6 +292,7 @@ namespace quadrotor
                 DM init_u_dm = DM::vertcat({init[7], init[8], init[9], init[10], init[11], init[12]});
                 DM target_u_dm = DM::vertcat({target[7], target[8], target[9], target[10], target[11], target[12]});
 
+                /*
                 DM pos_weights(1, _H + 1);
 
                 for (int i = 0; i <= _H; ++i)
@@ -300,12 +301,9 @@ namespace quadrotor
                 }
 
                 pos_weights = repmat(pos_weights, 3, 1);
+                */
 
                 // _opti.minimize(8 * sumsqr(_x - target_x_dm) + sumsqr(_u - target_u_dm));
-                _opti.minimize(8 * sumsqr(pos_weights * (_x(Slice(0, 3), Slice()) - target_x_dm(Slice(0, 3), Slice()))) +
-                               3 * sumsqr(_x(Slice(3, 4), Slice()) - target_x_dm(Slice(3, 4), Slice())) +
-                               4 * sumsqr(_u(Slice(0, 3), Slice()) - target_u_dm(Slice(0, 3), Slice())) +
-                               6 * sumsqr(_u(Slice(3, 3), Slice()) - target_u_dm(Slice(3, 3), Slice())));
 
                 _opti.subject_to(0 <= _c <= quadrotor::Value::Param::NumOpt::control_max);
 
@@ -314,12 +312,22 @@ namespace quadrotor
                 _opti.subject_to(_u(Slice(), 0) == init_u_dm);
                 //_opti.subject_to(_u(Slice(), _H) == target_u_dm);
 
+                const double POS_WGT = 0.8;
+                const double ROT_WGT = 0.3;
+                const double VEL_WGT = 0.4;
+                const double RVL_WGT = 0.6;
+                const double VAR_WGT = 0.01;
+
                 if (quadrotor::Value::Param::NumOpt::use_learned)
                 {
+                    MX variances(6, 1);
+
                     for (int i = 0; i < _H; ++i)
                     {
                         MX state = vertcat(_x(Slice(), i), _u(Slice(), i), _c(Slice(), i));
                         MX l = quadrotor::Value::Param::SymNN::learned_model->forward(state);
+
+                        variances += l(Slice(6, 12));
 
                         // THRUST
                         _opti.subject_to(_F(0, i) == -2 * (_x(4, i) * _x(6, i) - _x(3, i) * _x(5, i)) * _m * _g);
@@ -348,9 +356,20 @@ namespace quadrotor
                         _opti.subject_to(_a(4, i) == _I_inv(1, 0) * fx + _I_inv(1, 1) * fy + _I_inv(1, 2) * fz + l(4));
                         _opti.subject_to(_a(5, i) == _I_inv(2, 0) * fx + _I_inv(2, 1) * fy + _I_inv(2, 2) * fz + l(5));
                     }
+
+                    _opti.minimize(POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) - target_x_dm(Slice(0, 3), Slice())) +
+                                   ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) - target_x_dm(Slice(3, 4), Slice())) +
+                                   VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) - target_u_dm(Slice(0, 3), Slice())) +
+                                   RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) - target_u_dm(Slice(3, 3), Slice())) +
+                                   VAR_WGT * sumsqr(variances));
                 }
                 else
                 {
+                    _opti.minimize(POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) - target_x_dm(Slice(0, 3), Slice())) +
+                                   ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) - target_x_dm(Slice(3, 4), Slice())) +
+                                   VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) - target_u_dm(Slice(0, 3), Slice())) +
+                                   VAR_WGT * sumsqr(_u(Slice(3, 3), Slice()) - target_u_dm(Slice(3, 3), Slice())));
+
                     for (int i = 0; i < _H; ++i)
                     {
                         // THRUST
@@ -421,8 +440,7 @@ namespace quadrotor
                 opts["ipopt.print_level"] = 0;
                 opts["print_time"] = false;
                 opts["ipopt.tol"] = 1e-3;
-                // opts["ipopt.hessian_approximation"] = "limited-memory";
-                // opts["ipopt.fixed_variable_treatment"] = "make_constraint";
+                //opts["ipopt.hessian_approximation"] = "limited-memory";
 
                 // sqp
                 _opti.solver("ipopt", opts);

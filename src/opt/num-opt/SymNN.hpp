@@ -25,7 +25,7 @@ namespace symnn
         std::default_random_engine gen(time(NULL));
         std::normal_distribution<double> dist(mean, std);
         DM r(rows, cols);
-        
+
         for (int i = 0; i < rows; ++i)
         {
             for (int j = 0; j < cols; ++j)
@@ -36,7 +36,6 @@ namespace symnn
 
         return r;
     }
-
 
     namespace activation
     {
@@ -72,7 +71,7 @@ namespace symnn
 
         MX Gaussian(const MX &x)
         {
-            return exp(-x*x);
+            return exp(-x * x);
         }
 
         std::unordered_map<std::string, std::function<MX(const MX &)>> activation_map = {
@@ -171,7 +170,7 @@ namespace symnn
     {
     public:
         SymNN(const Params &params) : _input_size(params.input_size),
-                                      _output_size(params.output_size),
+                                      _output_size(2 * params.output_size),
                                       _optimizer(params.optimizer),
                                       _epochs(params.epochs),
                                       _learning_rate(params.learning_rate),
@@ -270,6 +269,11 @@ namespace symnn
             }
 
             return output;
+        }
+
+        MX variance()
+        {
+            return _out_substituted(Slice(_output_size / 2, _output_size));
         }
 
         MX forward(MX &input)
@@ -395,7 +399,7 @@ namespace symnn
             std::function<MX(const MX &)> activation = activation::activation_map[_activation_name];
 
             _X = MX::sym("X", _input_size);
-            _Y = MX::sym("Y", _output_size);
+            _Y = MX::sym("Y", _output_size / 2);
 
             std::vector<MX> all_params;
             all_params.push_back(_X);
@@ -433,7 +437,9 @@ namespace symnn
             _out = mtimes(_W.back(), prev) + _b.back();
             _out_fn = Function("out", all_params, {_out});
 
-            _loss = sumsqr(_Y - _out);
+            MX cov = MX::diag(_out(Slice(_output_size / 2, _output_size)));
+            MX err = _out(Slice(_output_size / 2)) - _Y;
+            _loss = mtimes(mtimes(err.T(), inv(cov)), err) + log(det(cov));
 
             _gradients = gradient(_loss, flat_params_var);
             _gradient_fn = Function("gradient_fn", {flat_params_var, _X, _Y}, {_gradients});

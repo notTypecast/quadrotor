@@ -201,6 +201,15 @@ namespace quadrotor
                 {
                     Eigen::VectorXd init_state = q.get_state();
 
+                    if (_filestream.is_open())
+                    {
+                        _filestream << init_state.transpose() << std::endl;
+                    }
+                    else
+                    {
+                        std::cout << "Current state: " << init_state.transpose() << std::endl;
+                    }
+
                     if (!full_run && quadrotor::Value::Param::Train::bad_episode_stop)
                     {
                         Eigen::Vector3d normal = q.get_normal();
@@ -212,15 +221,6 @@ namespace quadrotor
                             _stop_step = i - 2 < 0 ? 0 : i - 2;
                             break;
                         }
-                    }
-
-                    if (_filestream.is_open())
-                    {
-                        _filestream << init_state.transpose() << std::endl;
-                    }
-                    else
-                    {
-                        std::cout << "Current state: " << init_state.transpose() << std::endl;
                     }
 
                     Eigen::Vector4d controls;
