@@ -170,7 +170,7 @@ namespace symnn
     {
     public:
         SymNN(const Params &params) : _input_size(params.input_size),
-                                      _output_size(2 * params.output_size),
+                                      _output_size(params.output_size),
                                       _optimizer(params.optimizer),
                                       _epochs(params.epochs),
                                       _learning_rate(params.learning_rate),
@@ -399,7 +399,7 @@ namespace symnn
             std::function<MX(const MX &)> activation = activation::activation_map[_activation_name];
 
             _X = MX::sym("X", _input_size);
-            _Y = MX::sym("Y", _output_size / 2);
+            _Y = MX::sym("Y", _output_size);
 
             std::vector<MX> all_params;
             all_params.push_back(_X);
@@ -437,9 +437,25 @@ namespace symnn
             _out = mtimes(_W.back(), prev) + _b.back();
             _out_fn = Function("out", all_params, {_out});
 
-            MX cov = MX::diag(_out(Slice(_output_size / 2, _output_size)));
-            MX err = _out(Slice(_output_size / 2)) - _Y;
-            _loss = mtimes(mtimes(err.T(), inv(cov)), err) + log(det(cov));
+            //MX cov = MX::diag(_out(Slice(_output_size / 2, _output_size)));
+
+            // TODO: is this necessary?
+            /*
+            for (int i = 0; i < _output_size / 2; ++i)
+            {
+                for (int j = 0; j < _output_size / 2; ++j)
+                {
+                    if (i != j)
+                    {
+                        cov = substitute(cov, cov(i, j), 0);
+                    }
+                }
+            }
+            */
+
+            //MX err = _out(Slice(_output_size / 2)) - _Y;
+            //_loss = mtimes(mtimes(err.T(), inv(cov)), err) + log(det(cov));
+            _loss = sumsqr(_out - _Y);
 
             _gradients = gradient(_loss, flat_params_var);
             _gradient_fn = Function("gradient_fn", {flat_params_var, _X, _Y}, {_gradients});
@@ -538,10 +554,10 @@ namespace symnn
 
                     DM grad_values = _gradient_fn(params)[0];
 
-                    m = (_beta1 * m + (1 - _beta1) * grad_values) / (1 - pow(_beta1, t));
-                    v = (_beta2 * v + (1 - _beta2) * pow(grad_values, 2)) / (1 - pow(_beta2, t++));
+                    m = (_beta1 * m + (1 - _beta1) * grad_values);
+                    v = (_beta2 * v + (1 - _beta2) * pow(grad_values, 2));
 
-                    current_params -= _learning_rate * m / (sqrt(v) + _epsilon);
+                    current_params -= _learning_rate * (m / (1 - pow(_beta1, t))) / (sqrt((v / (1 - pow(_beta2, t++)))) + _epsilon);
                 }
             }
 

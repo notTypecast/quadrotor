@@ -231,6 +231,7 @@ namespace quadrotor
                     C(2, i) = static_cast<double>(_prev_result(2, i));
                     C(3, i) = static_cast<double>(_prev_result(3, i));
                 }
+                
                 /*
                 std::cout << _opti.debug().value(_x) << std::endl;
                 std::cout << _opti.debug().value(_u) << std::endl;
@@ -315,19 +316,19 @@ namespace quadrotor
                 const double POS_WGT = 0.8;
                 const double ROT_WGT = 0.3;
                 const double VEL_WGT = 0.4;
-                const double RVL_WGT = 0.6;
-                const double VAR_WGT = 0.01;
+                const double RVL_WGT = 0.8;
+                //const double VAR_WGT = 0.005;
 
                 if (quadrotor::Value::Param::NumOpt::use_learned)
                 {
-                    MX variances(6, 1);
+                    //MX variances(6, 1);
 
                     for (int i = 0; i < _H; ++i)
                     {
                         MX state = vertcat(_x(Slice(), i), _u(Slice(), i), _c(Slice(), i));
                         MX l = quadrotor::Value::Param::SymNN::learned_model->forward(state);
 
-                        variances += l(Slice(6, 12));
+                        //variances += l(Slice(6, 12));
 
                         // THRUST
                         _opti.subject_to(_F(0, i) == -2 * (_x(4, i) * _x(6, i) - _x(3, i) * _x(5, i)) * _m * _g);
@@ -360,15 +361,15 @@ namespace quadrotor
                     _opti.minimize(POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) - target_x_dm(Slice(0, 3), Slice())) +
                                    ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) - target_x_dm(Slice(3, 4), Slice())) +
                                    VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) - target_u_dm(Slice(0, 3), Slice())) +
-                                   RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) - target_u_dm(Slice(3, 3), Slice())) +
-                                   VAR_WGT * sumsqr(variances));
+                                   RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) - target_u_dm(Slice(3, 3), Slice())));// +
+                                   //VAR_WGT * sumsqr(variances));
                 }
                 else
                 {
                     _opti.minimize(POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) - target_x_dm(Slice(0, 3), Slice())) +
                                    ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) - target_x_dm(Slice(3, 4), Slice())) +
                                    VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) - target_u_dm(Slice(0, 3), Slice())) +
-                                   VAR_WGT * sumsqr(_u(Slice(3, 3), Slice()) - target_u_dm(Slice(3, 3), Slice())));
+                                   RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) - target_u_dm(Slice(3, 3), Slice())));
 
                     for (int i = 0; i < _H; ++i)
                     {
@@ -430,7 +431,7 @@ namespace quadrotor
 
                 if (_prev)
                 {
-                    for (int i = 0; i < pq::Value::Param::NumOpt::prev_steps_init; ++i)
+                    for (int i = 0; i < quadrotor::Value::Param::NumOpt::prev_steps_init; ++i)
                     {
                         _opti.set_initial(_c(Slice(), i), _prev_result(Slice(), i + 1));
                     }

@@ -18,8 +18,8 @@ int main()
     symnn::Params params;
     params.input_size = 17;
     params.output_size = 6;
-    params.hidden_layers = std::vector<int>{4, 3};
-    params.activation = "gaussian";
+    params.hidden_layers = std::vector<int>{4};
+    params.activation = "gauss";
     params.initializer = symnn::initializers::NXavier;
     params.optimizer = symnn::OPTIMIZER::ADAM;
     params.epochs = quadrotor::Value::Param::SymNN::epochs;
@@ -32,8 +32,6 @@ int main()
     symnn::Params params;
     quadrotor::Value::Param::SymNN::learned_model = std::make_unique<symnn::SymNN>("src/train/models/quad_model_4_0_50eps", params);
     */
-    
-
 
     double masses[] = {1, 2, 4};
     std::vector<std::vector<double>> errors_per_episode(quadrotor::Value::Param::Train::runs * quadrotor::Value::Param::Train::episodes);
@@ -81,6 +79,7 @@ int main()
                         train_input.block(0, train_input.cols() - new_input.cols(), train_input.rows(), new_input.cols()) = new_input;
                         train_target.block(0, train_target.cols() - new_target.cols(), train_target.rows(), new_target.cols()) = new_target;
                     }
+                    std::cout << train_target.col(0) << std::endl;
                 }
                 else
                 {
@@ -90,14 +89,13 @@ int main()
 
                 quadrotor::Value::Param::SymNN::learned_model->train(train_input, train_target);
 
-                /*
                 std::cout << "NN expected:" << std::endl;
                 std::cout << episode.get_train_target().block(0, 0, 6, episode.get_stop_step()).transpose() << std::endl;
                 std::cout << "NN actual:" << std::endl;
                 for (int l = 0; l < episode.get_stop_step(); ++l)
                 {
                     std::cout << quadrotor::Value::Param::SymNN::learned_model->forward(episode.get_train_input().col(l)).transpose() << std::endl;
-                }*/
+                }
 
                 quadrotor::Value::Param::NumOpt::use_learned = true;
             }
