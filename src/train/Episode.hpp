@@ -214,7 +214,7 @@ namespace quadrotor
                     {
                         Eigen::Vector3d normal = q.get_normal();
                         double angle = acos(normal[2]);
-
+                        
                         if (angle > quadrotor::Value::Param::Train::bad_episode_angle_threshold ||
                             q.get_state().segment(7, 6).cwiseAbs().maxCoeff() > quadrotor::Value::Param::Train::bad_episode_speed_threshold)
                         {

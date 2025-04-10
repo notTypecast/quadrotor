@@ -132,7 +132,8 @@ namespace pq
                     for (int i = 0; i < _H; ++i)
                     {
                         MX state = vertcat(_x(Slice(), i), _u(Slice(), i), _F(Slice(), i));
-                        MX l = pq::Value::Param::SymNN::learned_model->forward(state);
+                        MX l;
+                        std::tie(l, std::ignore) = pq::Value::Param::SymNN::learned_model->forward(state);
 
                         _opti.subject_to(_a(0, i) == -(_F(0, i) + _F(1, i)) * sin(_x(2, i)) / _m + l(0));
                         _opti.subject_to(_a(1, i) == (_F(0, i) + _F(1, i)) * cos(_x(2, i)) / _m - _g + l(1));
@@ -231,7 +232,7 @@ namespace quadrotor
                     C(2, i) = static_cast<double>(_prev_result(2, i));
                     C(3, i) = static_cast<double>(_prev_result(3, i));
                 }
-                
+
                 /*
                 std::cout << _opti.debug().value(_x) << std::endl;
                 std::cout << _opti.debug().value(_u) << std::endl;
@@ -293,19 +294,6 @@ namespace quadrotor
                 DM init_u_dm = DM::vertcat({init[7], init[8], init[9], init[10], init[11], init[12]});
                 DM target_u_dm = DM::vertcat({target[7], target[8], target[9], target[10], target[11], target[12]});
 
-                /*
-                DM pos_weights(1, _H + 1);
-
-                for (int i = 0; i <= _H; ++i)
-                {
-                    pos_weights(0, i) = 2 * (double)i / _H;
-                }
-
-                pos_weights = repmat(pos_weights, 3, 1);
-                */
-
-                // _opti.minimize(8 * sumsqr(_x - target_x_dm) + sumsqr(_u - target_u_dm));
-
                 _opti.subject_to(0 <= _c <= quadrotor::Value::Param::NumOpt::control_max);
 
                 _opti.subject_to(_x(Slice(), 0) == init_x_dm);
@@ -317,18 +305,15 @@ namespace quadrotor
                 const double ROT_WGT = 0.3;
                 const double VEL_WGT = 0.4;
                 const double RVL_WGT = 0.8;
-                //const double VAR_WGT = 0.005;
+                const double VAR_WGT = 0.1;
 
                 if (quadrotor::Value::Param::NumOpt::use_learned)
                 {
-                    //MX variances(6, 1);
-
                     for (int i = 0; i < _H; ++i)
                     {
                         MX state = vertcat(_x(Slice(), i), _u(Slice(), i), _c(Slice(), i));
-                        MX l = quadrotor::Value::Param::SymNN::learned_model->forward(state);
-
-                        //variances += l(Slice(6, 12));
+                        MX l, var;
+                        std::tie(l, var) = quadrotor::Value::Param::SymNN::learned_model->forward(state);
 
                         // THRUST
                         _opti.subject_to(_F(0, i) == -2 * (_x(4, i) * _x(6, i) - _x(3, i) * _x(5, i)) * _m * _g);
@@ -356,21 +341,16 @@ namespace quadrotor
                         _opti.subject_to(_a(3, i) == _I_inv(0, 0) * fx + _I_inv(0, 1) * fy + _I_inv(0, 2) * fz + l(3));
                         _opti.subject_to(_a(4, i) == _I_inv(1, 0) * fx + _I_inv(1, 1) * fy + _I_inv(1, 2) * fz + l(4));
                         _opti.subject_to(_a(5, i) == _I_inv(2, 0) * fx + _I_inv(2, 1) * fy + _I_inv(2, 2) * fz + l(5));
-                    }
 
-                    _opti.minimize(POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) - target_x_dm(Slice(0, 3), Slice())) +
-                                   ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) - target_x_dm(Slice(3, 4), Slice())) +
-                                   VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) - target_u_dm(Slice(0, 3), Slice())) +
-                                   RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) - target_u_dm(Slice(3, 3), Slice())));// +
-                                   //VAR_WGT * sumsqr(variances));
+                        _opti.minimize(POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) - target_x_dm(Slice(0, 3), Slice())) +
+                                       ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) - target_x_dm(Slice(3, 4), Slice())) +
+                                       VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) - target_u_dm(Slice(0, 3), Slice())) +
+                                       RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) - target_u_dm(Slice(3, 3), Slice())) +
+                                       VAR_WGT * sumsqr(var));
+                    }
                 }
                 else
                 {
-                    _opti.minimize(POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) - target_x_dm(Slice(0, 3), Slice())) +
-                                   ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) - target_x_dm(Slice(3, 4), Slice())) +
-                                   VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) - target_u_dm(Slice(0, 3), Slice())) +
-                                   RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) - target_u_dm(Slice(3, 3), Slice())));
-
                     for (int i = 0; i < _H; ++i)
                     {
                         // THRUST
@@ -399,6 +379,11 @@ namespace quadrotor
                         _opti.subject_to(_a(3, i) == _I_inv(0, 0) * fx + _I_inv(0, 1) * fy + _I_inv(0, 2) * fz);
                         _opti.subject_to(_a(4, i) == _I_inv(1, 0) * fx + _I_inv(1, 1) * fy + _I_inv(1, 2) * fz);
                         _opti.subject_to(_a(5, i) == _I_inv(2, 0) * fx + _I_inv(2, 1) * fy + _I_inv(2, 2) * fz);
+
+                        _opti.minimize(POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) - target_x_dm(Slice(0, 3), Slice())) +
+                                       ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) - target_x_dm(Slice(3, 4), Slice())) +
+                                       VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) - target_u_dm(Slice(0, 3), Slice())) +
+                                       RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) - target_u_dm(Slice(3, 3), Slice())));
                     }
                 }
 
@@ -441,7 +426,7 @@ namespace quadrotor
                 opts["ipopt.print_level"] = 0;
                 opts["print_time"] = false;
                 opts["ipopt.tol"] = 1e-3;
-                //opts["ipopt.hessian_approximation"] = "limited-memory";
+                // opts["ipopt.hessian_approximation"] = "limited-memory";
 
                 // sqp
                 _opti.solver("ipopt", opts);

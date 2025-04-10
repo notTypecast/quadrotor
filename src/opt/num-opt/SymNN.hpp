@@ -163,6 +163,9 @@ namespace symnn
         double beta1 = 0.9;
         double beta2 = 0.999;
         double epsilon = 1e-8;
+        // Dropout parameters
+        double dropout_rate = 0.5;
+        int inference_passes = 10;
     };
 
     // Fully connected NN
@@ -179,6 +182,8 @@ namespace symnn
                                       _beta1(params.beta1),
                                       _beta2(params.beta2),
                                       _epsilon(params.epsilon),
+                                      _dropout_rate(params.dropout_rate),
+                                      _inference_passes(params.inference_passes),
                                       _activation_name(params.activation),
                                       _initializer(params.initializer)
         {
@@ -256,10 +261,19 @@ namespace symnn
                 X(i) = input(i);
             }
 
-            std::vector<DM> params(_nn_values.begin(), _nn_values.end());
-            params.insert(params.begin(), X);
+            DM out = 0;
 
-            DM out = _out_fn(params)[0];
+            for (int i = 0; i < _inference_passes; ++i)
+            {
+                std::vector<DM> params(_nn_values.begin(), _nn_values.end());
+                params.insert(params.begin(), X);
+                std::vector<DM> mask = _get_random_mask();
+                params.insert(params.end(), mask.begin(), mask.end());
+
+                out += _out_fn(params)[0];
+            }
+
+            out /= _inference_passes;
 
             Eigen::VectorXd output(_output_size);
 
@@ -271,14 +285,36 @@ namespace symnn
             return output;
         }
 
-        MX variance()
+        std::pair<MX, MX> forward(MX &input)
         {
-            return _out_substituted(Slice(_output_size / 2, _output_size));
-        }
+            std::vector<MX> ls;
+            MX l = 0;
 
-        MX forward(MX &input)
-        {
-            return substitute(_out_substituted, _X, input);
+            for (int i = 0; i < _inference_passes; ++i)
+            {
+                std::vector<DM> mask = _get_random_mask();
+                MX out = substitute(_out_substituted, _r[0], mask[0]);
+                for (int i = 1; i < _r.size(); ++i)
+                {
+                    out = substitute(out, _r[i], mask[i]);
+                }
+
+                ls.push_back(substitute(out, _X, input));
+                l += ls.back();
+            }
+
+            l /= _inference_passes;
+
+            MX var = 0;
+
+            for (int i = 0; i < _inference_passes; ++i)
+            {
+                var += pow(ls[i] - l, 2);
+            }
+
+            var /= _inference_passes;
+
+            return {l, var};
         }
 
         void train(const Eigen::MatrixXd &input, const Eigen::MatrixXd &target, int stop_col = -1)
@@ -373,11 +409,14 @@ namespace symnn
         double _learning_rate, _momentum;
         double _max_grad;
         double _beta1, _beta2, _epsilon;
+        double _dropout_rate;
+        int _inference_passes;
         int _total_size;
         std::string _activation_name;
         std::function<DM(int, int)> _initializer;
         MX _X, _Y;
         std::vector<MX> _W, _b;
+        std::vector<MX> _r;
         MX _out;
         Function _out_fn;
         MX _loss;
@@ -407,12 +446,16 @@ namespace symnn
             std::vector<MX> flat_params;
 
             MX prev = _X;
+            MX r;
 
             for (int i = 0; i < hidden_layers.size(); ++i)
             {
                 _W.push_back(MX::sym("W" + std::to_string(i), hidden_layers[i], prev.size1()));
                 _b.push_back(MX::sym("b" + std::to_string(i), hidden_layers[i]));
-                prev = activation(mtimes(_W[i], prev) + _b[i]);
+                r = MX::sym("r" + std::to_string(i), hidden_layers[i]);
+                _r.push_back(r);
+
+                prev = r * activation(mtimes(_W[i], prev) + _b[i]);
 
                 all_params.push_back(_W[i]);
                 all_params.push_back(_b[i]);
@@ -434,31 +477,16 @@ namespace symnn
 
             _total_size = flat_params_var.size1();
 
+            all_params.insert(all_params.end(), _r.begin(), _r.end());
+
             _out = mtimes(_W.back(), prev) + _b.back();
             _out_fn = Function("out", all_params, {_out});
 
-            //MX cov = MX::diag(_out(Slice(_output_size / 2, _output_size)));
-
-            // TODO: is this necessary?
-            /*
-            for (int i = 0; i < _output_size / 2; ++i)
-            {
-                for (int j = 0; j < _output_size / 2; ++j)
-                {
-                    if (i != j)
-                    {
-                        cov = substitute(cov, cov(i, j), 0);
-                    }
-                }
-            }
-            */
-
-            //MX err = _out(Slice(_output_size / 2)) - _Y;
-            //_loss = mtimes(mtimes(err.T(), inv(cov)), err) + log(det(cov));
             _loss = sumsqr(_out - _Y);
 
             _gradients = gradient(_loss, flat_params_var);
-            _gradient_fn = Function("gradient_fn", {flat_params_var, _X, _Y}, {_gradients});
+
+            _gradient_fn = Function("gradient_fn", {flat_params_var, _X, _Y, vertcat(_r)}, {_gradients});
 
             std::vector<MX> opt_vars(all_params.size() - 1);
             for (int i = 0; i < _W.size(); ++i)
@@ -471,7 +499,7 @@ namespace symnn
 
             if (_nn_values.empty())
             {
-                for (int i = 1; i < all_params.size() - 2; ++i)
+                for (int i = 1; i < all_params.size() - 2 - _r.size(); ++i)
                 {
                     if (i % 2)
                     {
@@ -483,8 +511,8 @@ namespace symnn
                     }
                 }
 
-                _nn_values.push_back(DM::rand(all_params[all_params.size() - 2].size1(), all_params[all_params.size() - 2].size2()));
-                _nn_values.push_back(DM::rand(all_params[all_params.size() - 1].size1(), all_params[all_params.size() - 1].size2()));
+                _nn_values.push_back(DM::rand(all_params[all_params.size() - 2 - _r.size()].size1(), all_params[all_params.size() - 2 - _r.size()].size2()));
+                _nn_values.push_back(DM::rand(all_params[all_params.size() - 1 - _r.size()].size1(), all_params[all_params.size() - 1 - _r.size()].size2()));
             }
 
             _out_substituted = _out;
@@ -493,6 +521,28 @@ namespace symnn
                 _out_substituted = substitute(_out_substituted, _W[i], _nn_values[2 * i]);
                 _out_substituted = substitute(_out_substituted, _b[i], _nn_values[2 * i + 1]);
             }
+        }
+
+        std::vector<DM> _get_random_mask()
+        {
+            static std::random_device rd;
+            static std::mt19937 gen(rd());
+            std::bernoulli_distribution d(1.0 - _dropout_rate);
+
+            std::vector<DM> mask;
+            for (int i = 0; i < _r.size(); ++i)
+            {
+                DM layer_mask(_b[i].size(1));
+
+                for (int j = 0; j < layer_mask.size1(); ++j)
+                {
+                    layer_mask(j) = d(gen);
+                }
+
+                mask.push_back(layer_mask);
+            }
+
+            return mask;
         }
 
         MX _instance_loss(const Eigen::VectorXd &input, const Eigen::VectorXd &target)
@@ -550,7 +600,7 @@ namespace symnn
             {
                 for (int j = 0; j < (stop_col == -1 ? input.cols() : stop_col); ++j)
                 {
-                    std::vector<DM> params = {current_params, X(Slice(), j), Y(Slice(), j)};
+                    std::vector<DM> params = {current_params, X(Slice(), j), Y(Slice(), j), vertcat(_get_random_mask())};
 
                     DM grad_values = _gradient_fn(params)[0];
 
@@ -572,6 +622,7 @@ namespace symnn
 
         void _train_gd(const Eigen::MatrixXd &input, const Eigen::MatrixXd &target, int stop_col = -1)
         {
+            /*
             DM current_params;
             // std::cout << "First value: " << _nn_values[0] << std::endl;
             for (int i = 0; i < _nn_values.size(); i += 2)
@@ -631,7 +682,7 @@ namespace symnn
             // std::cout << "Weights:" << std::endl;
             // std::cout << _nn_values << std::endl;
 
-            // std::cout << "First value now: " << current_params(0) << std::endl;
+            // std::cout << "First value now: " << current_params(0) << std::endl;*/
         }
 
         void _train_ipopt(const Eigen::MatrixXd &input, const Eigen::MatrixXd &target, int stop_col = -1)

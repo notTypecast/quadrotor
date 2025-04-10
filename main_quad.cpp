@@ -79,7 +79,6 @@ int main()
                         train_input.block(0, train_input.cols() - new_input.cols(), train_input.rows(), new_input.cols()) = new_input;
                         train_target.block(0, train_target.cols() - new_target.cols(), train_target.rows(), new_target.cols()) = new_target;
                     }
-                    std::cout << train_target.col(0) << std::endl;
                 }
                 else
                 {

@@ -151,12 +151,12 @@ namespace quadrotor
             }
             namespace Train
             {
-                bool bad_episode_stop = true;                        // whether to stop bad episodes
-                constexpr double bad_episode_angle_threshold = 1;    // threshold for angle between World Z and Quadrotor Z axis
-                constexpr double bad_episode_speed_threshold = 15.0; // threshold for speed
+                bool bad_episode_stop = true;                       // whether to stop bad episodes
+                constexpr double bad_episode_angle_threshold = 1.0; // threshold for angle between World Z and Quadrotor Z axis
+                constexpr double bad_episode_speed_threshold = 8.0; // threshold for speed
                 constexpr int collection_steps = 80;                // number of steps to collect data for training (per episode)
-                constexpr int episodes = 50;                         // number of episodes to train
-                constexpr int runs = 1;                              // number of runs to train (for averaging)
+                constexpr int episodes = 10;                        // number of episodes to train
+                constexpr int runs = 1;                             // number of runs to train (for averaging)
             }
         }
 
