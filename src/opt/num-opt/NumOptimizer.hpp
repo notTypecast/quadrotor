@@ -319,6 +319,7 @@ namespace quadrotor
                         _opti.subject_to(_F(0, i) == -2 * (_x(4, i) * _x(6, i) - _x(3, i) * _x(5, i)) * _m * _g);
                         _opti.subject_to(_F(1, i) == -2 * (_x(5, i) * _x(6, i) + _x(3, i) * _x(4, i)) * _m * _g);
                         _opti.subject_to(_F(2, i) == -2 * (_x(3, i) * _x(3, i) + _x(6, i) * _x(6, i)) * _m * _g + _m * _g + _Kf * (_c(0, i) + _c(1, i) + _c(2, i) + _c(3, i)));
+                        
                         // TORQUE
                         _opti.subject_to(_F(3, i) == _l * _Kf * (_c(1, i) - _c(3, i)));
                         _opti.subject_to(_F(4, i) == _l * _Kf * (_c(2, i) - _c(0, i)));
@@ -337,11 +338,11 @@ namespace quadrotor
                         MX fx = _F(3, i) - (_u(4, i) * wiz - _u(5, i) * wiy);
                         MX fy = _F(4, i) - (_u(5, i) * wix - _u(3, i) * wiz);
                         MX fz = _F(5, i) - (_u(3, i) * wiy - _u(4, i) * wix);
-
+                        
                         _opti.subject_to(_a(3, i) == _I_inv(0, 0) * fx + _I_inv(0, 1) * fy + _I_inv(0, 2) * fz + l(3));
                         _opti.subject_to(_a(4, i) == _I_inv(1, 0) * fx + _I_inv(1, 1) * fy + _I_inv(1, 2) * fz + l(4));
                         _opti.subject_to(_a(5, i) == _I_inv(2, 0) * fx + _I_inv(2, 1) * fy + _I_inv(2, 2) * fz + l(5));
-
+                        
                         _opti.minimize(POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) - target_x_dm(Slice(0, 3), Slice())) +
                                        ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) - target_x_dm(Slice(3, 4), Slice())) +
                                        VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) - target_u_dm(Slice(0, 3), Slice())) +

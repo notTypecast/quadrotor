@@ -74,7 +74,7 @@ namespace symnn
             return exp(-x * x);
         }
 
-        std::unordered_map<std::string, std::function<MX(const MX &)>> activation_map = {
+        std::unordered_map<std::string, std::function<MX(const MX &)>> name_to_activation = {
             {"sigmoid", Sigmoid},
             {"softmax", Softmax},
             {"relu", Relu},
@@ -82,6 +82,15 @@ namespace symnn
             {"elu", ELU},
             {"tanh", Tanh},
             {"gaussian", Gaussian}};
+
+        std::unordered_map<std::function<MX(const MX &)>, std::string> activation_to_name = {
+            {Sigmoid, "sigmoid"},
+            {Softmax, "softmax"},
+            {Relu, "relu"},
+            {Lrelu, "lrelu"},
+            {ELU, "elu"},
+            {Tanh, "tanh"},
+            {Gaussian, "gaussian"}};
     }
 
     namespace initializers
@@ -151,7 +160,7 @@ namespace symnn
         int input_size;
         int output_size;
         std::vector<int> hidden_layers;
-        std::string activation;
+        std::function<MX(const MX &)> activation = activation::Sigmoid;
         std::function<DM(int, int)> initializer = initializers::NXavier;
         OPTIMIZER optimizer = GD;
         // Gradient-based only parameters
@@ -172,41 +181,23 @@ namespace symnn
     class SymNN
     {
     public:
-        SymNN(const Params &params) : _input_size(params.input_size),
-                                      _output_size(params.output_size),
-                                      _optimizer(params.optimizer),
-                                      _epochs(params.epochs),
-                                      _learning_rate(params.learning_rate),
-                                      _momentum(params.momentum),
-                                      _max_grad(params.max_grad),
-                                      _beta1(params.beta1),
-                                      _beta2(params.beta2),
-                                      _epsilon(params.epsilon),
-                                      _dropout_rate(params.dropout_rate),
-                                      _inference_passes(params.inference_passes),
-                                      _activation_name(params.activation),
-                                      _initializer(params.initializer)
+        SymNN(const Params &params) : _params(params)
         {
             _construct(params.hidden_layers);
         }
 
-        SymNN(const std::string &filename, Params &params) : _optimizer(params.optimizer),
-                                                             _epochs(params.epochs),
-                                                             _learning_rate(params.learning_rate),
-                                                             _momentum(params.momentum),
-                                                             _max_grad(params.max_grad),
-                                                             _beta1(params.beta1),
-                                                             _beta2(params.beta2),
-                                                             _epsilon(params.epsilon),
-                                                             _initializer(params.initializer)
+        SymNN(const std::string &filename, Params &params) : _params(params)
         {
             std::ifstream file(filename);
 
-            file >> _activation_name;
-            file >> _input_size;
-            file >> _output_size;
+            std::string activation_name;
+            file >> activation_name;
 
-            params.hidden_layers.clear();
+            _params.activation = activation::name_to_activation.find(activation_name) == activation::name_to_activation.end() ? activation::Sigmoid : activation::name_to_activation[activation_name];
+            file >> _params.input_size;
+            file >> _params.output_size;
+
+            _params.hidden_layers.clear();
 
             std::string line;
             std::getline(file, line);
@@ -216,19 +207,19 @@ namespace symnn
             int num;
             while (iss >> num)
             {
-                params.hidden_layers.push_back(num);
+                _params.hidden_layers.push_back(num);
             }
 
-            int prev_size = _input_size;
+            int prev_size = _params.input_size;
             double val;
 
-            params.hidden_layers.push_back(_output_size);
+            _params.hidden_layers.push_back(_params.output_size);
 
-            for (int i = 0; i < params.hidden_layers.size(); ++i)
+            for (int i = 0; i < _params.hidden_layers.size(); ++i)
             {
                 _nn_values.push_back(DM(params.hidden_layers[i], prev_size));
 
-                for (int j = 0; j < params.hidden_layers[i]; ++j)
+                for (int j = 0; j < _params.hidden_layers[i]; ++j)
                 {
                     for (int k = 0; k < prev_size; ++k)
                     {
@@ -239,16 +230,18 @@ namespace symnn
 
                 _nn_values.push_back(DM(params.hidden_layers[i], 1));
 
-                for (int j = 0; j < params.hidden_layers[i]; ++j)
+                for (int j = 0; j < _params.hidden_layers[i]; ++j)
                 {
                     file >> val;
                     _nn_values.back()(j) = val;
                 }
 
-                prev_size = params.hidden_layers[i];
+                prev_size = _params.hidden_layers[i];
             }
 
-            params.hidden_layers.pop_back();
+            _params.hidden_layers.pop_back();
+
+            file.close();
 
             _construct(params.hidden_layers);
         }
@@ -263,7 +256,7 @@ namespace symnn
 
             DM out = 0;
 
-            for (int i = 0; i < _inference_passes; ++i)
+            for (int i = 0; i < _params.inference_passes; ++i)
             {
                 std::vector<DM> params(_nn_values.begin(), _nn_values.end());
                 params.insert(params.begin(), X);
@@ -273,11 +266,11 @@ namespace symnn
                 out += _out_fn(params)[0];
             }
 
-            out /= _inference_passes;
+            out /= _params.inference_passes;
 
-            Eigen::VectorXd output(_output_size);
+            Eigen::VectorXd output(_params.output_size);
 
-            for (int i = 0; i < _output_size; ++i)
+            for (int i = 0; i < _params.output_size; ++i)
             {
                 output(i) = static_cast<double>(out(i));
             }
@@ -290,7 +283,7 @@ namespace symnn
             std::vector<MX> ls;
             MX l = 0;
 
-            for (int i = 0; i < _inference_passes; ++i)
+            for (int i = 0; i < _params.inference_passes; ++i)
             {
                 std::vector<DM> mask = _get_random_mask();
                 MX out = substitute(_out_substituted, _r[0], mask[0]);
@@ -303,23 +296,23 @@ namespace symnn
                 l += ls.back();
             }
 
-            l /= _inference_passes;
+            l /= _params.inference_passes;
 
             MX var = 0;
 
-            for (int i = 0; i < _inference_passes; ++i)
+            for (int i = 0; i < _params.inference_passes; ++i)
             {
                 var += pow(ls[i] - l, 2);
             }
 
-            var /= _inference_passes;
+            var /= _params.inference_passes;
 
             return {l, var};
         }
 
         void train(const Eigen::MatrixXd &input, const Eigen::MatrixXd &target, int stop_col = -1)
         {
-            switch (_optimizer)
+            switch (_params.optimizer)
             {
             case GD:
                 _train_gd(input, target, stop_col);
@@ -350,7 +343,7 @@ namespace symnn
                 }
                 else
                 {
-                    _nn_values[i] = _initializer(_nn_values[i].size1(), _nn_values[i].size2());
+                    _nn_values[i] = _params.initializer(_nn_values[i].size1(), _nn_values[i].size2());
                 }
             }
 
@@ -369,9 +362,9 @@ namespace symnn
         {
             std::ofstream file(filename);
 
-            file << _activation_name << std::endl;
-            file << _input_size << std::endl;
-            file << _output_size << std::endl;
+            file << activation::activation_to_name[_params.activation] << std::endl;
+            file << _params.input_size << std::endl;
+            file << _params.output_size << std::endl;
 
             for (int i = 0; i < _W.size() - 1; ++i)
             {
@@ -403,17 +396,9 @@ namespace symnn
         }
 
     protected:
-        OPTIMIZER _optimizer;
-        int _input_size, _output_size;
-        int _epochs;
-        double _learning_rate, _momentum;
-        double _max_grad;
-        double _beta1, _beta2, _epsilon;
-        double _dropout_rate;
-        int _inference_passes;
+        Params _params;
+
         int _total_size;
-        std::string _activation_name;
-        std::function<DM(int, int)> _initializer;
         MX _X, _Y;
         std::vector<MX> _W, _b;
         std::vector<MX> _r;
@@ -430,15 +415,8 @@ namespace symnn
 
         void _construct(const std::vector<int> &hidden_layers)
         {
-            if (activation::activation_map.find(_activation_name) == activation::activation_map.end())
-            {
-                _activation_name = "sigmoid";
-            }
-
-            std::function<MX(const MX &)> activation = activation::activation_map[_activation_name];
-
-            _X = MX::sym("X", _input_size);
-            _Y = MX::sym("Y", _output_size);
+            _X = MX::sym("X", _params.input_size);
+            _Y = MX::sym("Y", _params.output_size);
 
             std::vector<MX> all_params;
             all_params.push_back(_X);
@@ -455,7 +433,7 @@ namespace symnn
                 r = MX::sym("r" + std::to_string(i), hidden_layers[i]);
                 _r.push_back(r);
 
-                prev = r * activation(mtimes(_W[i], prev) + _b[i]);
+                prev = r * _params.activation(mtimes(_W[i], prev) + _b[i]);
 
                 all_params.push_back(_W[i]);
                 all_params.push_back(_b[i]);
@@ -464,8 +442,8 @@ namespace symnn
                 flat_params.push_back(_b[i]);
             }
 
-            _W.push_back(MX::sym("Wout", _output_size, hidden_layers.back()));
-            _b.push_back(MX::sym("bout", _output_size));
+            _W.push_back(MX::sym("Wout", _params.output_size, hidden_layers.back()));
+            _b.push_back(MX::sym("bout", _params.output_size));
 
             all_params.push_back(_W.back());
             all_params.push_back(_b.back());
@@ -503,7 +481,7 @@ namespace symnn
                 {
                     if (i % 2)
                     {
-                        _nn_values.push_back(_initializer(all_params[i].size1(), all_params[i].size2()));
+                        _nn_values.push_back(_params.initializer(all_params[i].size1(), all_params[i].size2()));
                     }
                     else
                     {
@@ -527,7 +505,7 @@ namespace symnn
         {
             static std::random_device rd;
             static std::mt19937 gen(rd());
-            std::bernoulli_distribution d(1.0 - _dropout_rate);
+            std::bernoulli_distribution d(1.0 - _params.dropout_rate);
 
             std::vector<DM> mask;
             for (int i = 0; i < _r.size(); ++i)
@@ -596,7 +574,7 @@ namespace symnn
             DM v = DM::zeros(current_params.size1(), current_params.size2());
             int t = 1;
 
-            for (int epoch = 0; epoch < _epochs; ++epoch)
+            for (int epoch = 0; epoch < _params.epochs; ++epoch)
             {
                 for (int j = 0; j < (stop_col == -1 ? input.cols() : stop_col); ++j)
                 {
@@ -604,10 +582,10 @@ namespace symnn
 
                     DM grad_values = _gradient_fn(params)[0];
 
-                    m = (_beta1 * m + (1 - _beta1) * grad_values);
-                    v = (_beta2 * v + (1 - _beta2) * pow(grad_values, 2));
+                    m = (_params.beta1 * m + (1 - _params.beta1) * grad_values);
+                    v = (_params.beta2 * v + (1 - _params.beta2) * pow(grad_values, 2));
 
-                    current_params -= _learning_rate * (m / (1 - pow(_beta1, t))) / (sqrt((v / (1 - pow(_beta2, t++)))) + _epsilon);
+                    current_params -= _params.learning_rate * (m / (1 - pow(_params.beta1, t))) / (sqrt((v / (1 - pow(_params.beta2, t++)))) + _params.epsilon);
                 }
             }
 

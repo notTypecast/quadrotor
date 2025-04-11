@@ -11,10 +11,10 @@
 
 int main()
 {
-    quadrotor::Value::target << 4, 4, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+    quadrotor::Value::target << 0, 0, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 
     symnn::Params nn_params;
-    quadrotor::Value::Param::SymNN::learned_model = std::make_unique<symnn::SymNN>("src/train/models/quad_model_4_0 copy", nn_params);
+    quadrotor::Value::Param::SymNN::learned_model = std::make_unique<symnn::SymNN>("src/train/models/quad_model_4_0", nn_params);
 
     double mass = 4;
 
