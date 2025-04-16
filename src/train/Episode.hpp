@@ -188,6 +188,25 @@ namespace quadrotor
 {
 namespace train
 {
+struct Errors
+{
+    bool   failed           = false;
+    int    steps            = 0;
+    double position         = 0.0;
+    double orientation      = 0.0;
+    double velocity         = 0.0;
+    double angular_velocity = 0.0;
+
+    friend std::ostream &operator<<(std::ostream &os, const Errors &err);
+};
+
+std::ostream &operator<<(std::ostream &os, const Errors &err)
+{
+    os << err.failed << "," << err.steps << "," << err.position << ","
+       << err.orientation << "," << err.velocity << "," << err.angular_velocity;
+    return os;
+}
+
 class Episode
 {
   public:
@@ -212,7 +231,7 @@ class Episode
         }
     }
 
-    std::vector<double> run(pq::Optimizer &optimizer, bool full_run = false)
+    Errors run(pq::Optimizer &optimizer, bool full_run = false)
     {
         _stop_step = -1;
         optimizer.reinit();
@@ -228,9 +247,9 @@ class Episode
                         << std::endl;
         }
 
-        std::vector<double> errors(
-          quadrotor::Value::Param::Train::collection_steps,
-          0);
+        Eigen::RowVector4d target_q_T =
+          quadrotor::Value::target.segment(3, 4).transpose();
+        Errors errors;
 
         for (int i = 0; i < quadrotor::Value::Param::Train::collection_steps;
              ++i)
@@ -247,7 +266,8 @@ class Episode
                           << std::endl;
             }
 
-            if (!full_run && quadrotor::Value::Param::Train::bad_episode_stop)
+            if (!full_run && quadrotor::Value::Param::Train::bad_episode_stop &&
+                _stop_step == -1)
             {
                 Eigen::Vector3d normal = q.get_normal();
                 double          angle  = acos(normal[2]);
@@ -258,7 +278,7 @@ class Episode
                       quadrotor::Value::Param::Train::
                         bad_episode_speed_threshold)
                 {
-                    _stop_step = i - 2 < 0 ? 0 : i - 2;
+                    _stop_step = std::max(i - 2, 0);
                     break;
                 }
             }
@@ -281,15 +301,12 @@ class Episode
                 std::cout << e.what() << std::endl;
                 std::cout << "Optimization failed, stopping episode"
                           << std::endl;
-                _stop_step = i - 2 < 0 ? 0 : i - 2;
+                _stop_step    = std::max(i - 2, 0);
+                errors.failed = true;
                 break;
             }
 
             q.update(controls, quadrotor::Value::Param::Sim::dt);
-
-            errors[i] = (quadrotor::Value::target.segment(0, 3) -
-                         q.get_state().segment(0, 3))
-                          .squaredNorm();
 
             _train_input.col(i) =
               (Eigen::Vector<double, 17>() << init_state, controls).finished();
@@ -298,6 +315,25 @@ class Episode
               quadrotor::dynamic_model_predict(init_state,
                                                controls,
                                                optimizer.model_params());
+
+            errors.position +=
+              (quadrotor::Value::target.segment(0, 3) - q.get_position())
+                .squaredNorm();
+
+            errors.orientation += std::pow(
+              1 -
+                std::pow((target_q_T * q.get_orientation_vector()).value(), 2),
+              2);
+
+            errors.velocity +=
+              (quadrotor::Value::target.segment(7, 3) - q.get_velocity())
+                .squaredNorm();
+            errors.angular_velocity +=
+              (quadrotor::Value::target.segment(10, 3) -
+               q.get_angular_velocity())
+                .squaredNorm();
+
+            ++errors.steps;
         }
 
         if (_stop_step == -1)
@@ -305,7 +341,7 @@ class Episode
             _stop_step = quadrotor::Value::Param::Train::collection_steps - 1;
         }
 
-        std::cout << "Final error: " << errors[_stop_step] << std::endl;
+        std::cout << "Final errors: " << errors << std::endl;
 
         return errors;
     }

@@ -84,6 +84,15 @@ class Quadrotor
         return _orientation;
     }
 
+    Eigen::Vector4d get_orientation_vector()
+    {
+        return (Eigen::Vector4d() << _orientation.w(),
+                _orientation.x(),
+                _orientation.y(),
+                _orientation.z())
+          .finished();
+    }
+
     Eigen::Vector3d get_velocity()
     {
         return _velocity;

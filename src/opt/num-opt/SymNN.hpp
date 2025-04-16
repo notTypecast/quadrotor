@@ -213,6 +213,7 @@ struct Params
     double beta1   = 0.9;
     double beta2   = 0.999;
     double epsilon = 1e-8;
+    double lambda  = 0.01;
     // Dropout parameters
     double dropout_rate     = 0;
     int    inference_passes = 1;
@@ -451,8 +452,7 @@ class SymNN
     }
 
   protected:
-    Params      _params;
-    std::string _activation_name;
+    Params _params;
 
     Function _out_fn;
     Function _gradient_fn;
@@ -569,7 +569,9 @@ class SymNN
 
                 _nn_values -=
                   _params.learning_rate * (m / (1 - pow(_params.beta1, t))) /
-                  (sqrt((v / (1 - pow(_params.beta2, t++)))) + _params.epsilon);
+                    (sqrt(v / (1 - pow(_params.beta2, t++))) +
+                     _params.epsilon) +
+                  _params.learning_rate * _params.lambda * _nn_values;
             }
         }
     }

@@ -11,30 +11,20 @@
 #include "src/sim/Quadrotor.hpp"
 #include "src/train/Episode.hpp"
 
-int main()
+void execute(std::string name_prefix = "")
 {
-    quadrotor::Value::target << quadrotor::Value::Param::NumOpt::target_x,
-      quadrotor::Value::Param::NumOpt::target_y,
-      quadrotor::Value::Param::NumOpt::target_z, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-
-    symnn::Params params;
-    params.input_size    = 17;
-    params.output_size   = 6;
-    params.hidden_layers = std::vector<int> { 4 };
-    params.activation    = symnn::activation::SIGMOID;
-    params.initializer   = symnn::initializers::NXavier;
-    params.optimizer     = symnn::OPTIMIZER::ADAM;
-    params.epochs        = 2000;
-    quadrotor::Value::Param::SymNN::learned_model =
-      std::make_unique<symnn::SymNN>(params);
-
-    double                           masses[] = { 1, 2, 4 };
-    std::vector<std::vector<double>> errors_per_episode(
-      quadrotor::Value::Param::Train::runs *
-      quadrotor::Value::Param::Train::episodes);
+    double masses[] = { 1, 2, 4, 6 };
+    std::vector<std::vector<quadrotor::train::Errors>> errors(
+      quadrotor::Value::Param::Train::runs,
+      std::vector<quadrotor::train::Errors>(
+        quadrotor::Value::Param::Train::episodes));
 
     for (int i = 0; i < sizeof(masses) / sizeof(masses[0]); ++i)
     {
+        std::string mass_str = std::to_string(masses[i]);
+        mass_str.erase(mass_str.find_last_not_of('0') + 1, std::string::npos);
+        mass_str.erase(mass_str.find_last_not_of('.') + 1, std::string::npos);
+
         Eigen::MatrixXd train_input, train_target;
 
         quadrotor::num_opt::Params params;
@@ -56,13 +46,13 @@ int main()
             for (int k = 0; k < quadrotor::Value::Param::Train::episodes; ++k)
             {
                 std::cout << "Episode " << k << std::endl;
-                episode.run(optimizer);
+                errors[j][k] = episode.run(optimizer);
 
                 if (quadrotor::Value::Param::SymNN::use_all_data)
                 {
                     Eigen::MatrixXd new_input  = episode.get_train_input();
                     Eigen::MatrixXd new_target = episode.get_train_target();
-                    if (train_input.size() == 0)
+                    if (k == 0)
                     {
                         train_input  = new_input;
                         train_target = new_target;
@@ -96,6 +86,7 @@ int main()
                   train_input,
                   train_target);
 
+                /*
                 std::cout << "NN expected:" << std::endl;
                 std::cout << episode.get_train_target()
                                .block(0, 0, 6, episode.get_stop_step())
@@ -109,23 +100,77 @@ int main()
                                    .transpose()
                               << std::endl;
                 }
+                */
 
                 quadrotor::Value::Param::NumOpt::use_learned = true;
             }
 
-            std::cout << "Episode with completed training" << std::endl;
-            episode.run(optimizer, true);
+            // std::cout << "Episode with completed training" << std::endl;
+            // episode.run(optimizer, true);
 
-            std::string mass_str = std::to_string(masses[i]);
-            mass_str.erase(mass_str.find_last_not_of('0') + 1,
-                           std::string::npos);
-            mass_str.erase(mass_str.find_last_not_of('.') + 1,
-                           std::string::npos);
             quadrotor::Value::Param::SymNN::learned_model->save(
-              "src/train/models/quad_model_" + mass_str + "_" +
-              std::to_string(j));
+              "src/train/models/" + name_prefix + "quad_model_" + mass_str +
+              "_" + std::to_string(j));
         }
+
+        std::ofstream out("sample_error/" + name_prefix + "quad_error_" +
+                          mass_str + ".txt");
+        out << mass_str << " "
+            << quadrotor::Value::Param::Train::collection_steps << " "
+            << quadrotor::Value::Param::Train::episodes << " "
+            << quadrotor::Value::Param::Train::runs << " " << std::endl;
+        for (int j = 0; j < quadrotor::Value::Param::Train::runs; ++j)
+        {
+            int run_idx = j * quadrotor::Value::Param::Train::episodes;
+            for (int k = 0; k < quadrotor::Value::Param::Train::episodes; ++k)
+            {
+                out << errors[j][k] << " ";
+            }
+            out << std::endl;
+        }
+        out.close();
     }
+}
+
+int main()
+{
+    quadrotor::Value::target << quadrotor::Value::Param::NumOpt::target_x,
+      quadrotor::Value::Param::NumOpt::target_y,
+      quadrotor::Value::Param::NumOpt::target_z, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+
+    symnn::Params params;
+    params.input_size    = 17;
+    params.output_size   = 6;
+    params.hidden_layers = std::vector<int> { 4 };
+    params.activation    = symnn::activation::SIGMOID;
+    params.initializer   = symnn::initializers::NXavier;
+    params.optimizer     = symnn::OPTIMIZER::ADAM;
+    params.epochs        = 2000;
+    quadrotor::Value::Param::SymNN::learned_model =
+      std::make_unique<symnn::SymNN>(params);
+
+#if defined(DV)
+    // Dropout with Variance
+    std::cout << "Running DV" << std::endl;
+    execute("DV_");
+#elif defined(DNV)
+
+    // Dropout without Variance
+    quadrotor::Value::Param::NumOpt::nn_variance_weight = 0.0;
+    std::cout << "Running DNV" << std::endl;
+    execute("D_");
+#elif defined(REG)
+    // No dropout
+    quadrotor::Value::Param::NumOpt::nn_variance_weight = 0.0;
+    params.dropout_rate                                 = 0;
+    params.inference_passes                             = 1;
+    quadrotor::Value::Param::SymNN::learned_model =
+      std::make_unique<symnn::SymNN>(params);
+    std::cout << "Running reg" << std::endl;
+    execute("reg_");
+#else
+    execute();
+#endif
 
     return 0;
 }

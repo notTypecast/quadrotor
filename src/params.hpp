@@ -135,14 +135,15 @@ constexpr double dt = 0.05;
 }
 namespace NumOpt
 {
-constexpr int    target_x        = 4;
-constexpr int    target_y        = 4;
-constexpr int    target_z        = 2;
-constexpr int    horizon         = 8;
-constexpr double dt              = Sim::dt;
-constexpr double control_max     = 7 * Constant::mass * Constant::g / 24;
-constexpr int    prev_steps_init = horizon - 1;
-bool             use_learned     = false;
+constexpr int    target_x           = 4;
+constexpr int    target_y           = 4;
+constexpr int    target_z           = 2;
+constexpr int    horizon            = 8;
+constexpr double dt                 = Sim::dt;
+constexpr double control_max        = 7 * Constant::mass * Constant::g / 24;
+constexpr int    prev_steps_init    = horizon - 1;
+bool             use_learned        = false;
+double           nn_variance_weight = 0.2;
 }
 namespace SymNN
 {
@@ -158,9 +159,9 @@ constexpr double bad_episode_angle_threshold =
   1.0; // threshold for angle between World Z and Quadrotor Z axis
 constexpr double bad_episode_speed_threshold = 8.0; // threshold for speed
 constexpr int    collection_steps =
-  80; // number of steps to collect data for training (per episode)
-constexpr int episodes = 5; // number of episodes to train
-constexpr int runs     = 1; // number of runs to train (for averaging)
+  100; // number of steps to collect data for training (per episode)
+constexpr int episodes = 10; // number of episodes to train
+constexpr int runs     = 10; // number of runs to train (for averaging)
 }
 }
 

@@ -336,20 +336,24 @@ class NumOptimizer : public pq::Optimizer
         //_opti.subject_to(_u(Slice(), _H) == target_u_dm);
 
         const double POS_WGT = 0.8;
-        const double ROT_WGT = 0.3;
+        const double ROT_WGT = 0.6;
         const double VEL_WGT = 0.4;
         const double RVL_WGT = 0.8;
-        const double VAR_WGT = 0.1;
+        const double VAR_WGT =
+          quadrotor::Value::Param::NumOpt::nn_variance_weight;
 
         if (quadrotor::Value::Param::NumOpt::use_learned)
         {
+            MX var = 0;
+
             for (int i = 0; i < _H; ++i)
             {
                 MX state =
                   vertcat(_x(Slice(), i), _u(Slice(), i), _c(Slice(), i));
-                MX l, var;
-                std::tie(l, var) =
+                MX l, step_var;
+                std::tie(l, step_var) =
                   quadrotor::Value::Param::SymNN::learned_model->forward(state);
+                var += step_var;
 
                 // THRUST
                 _opti.subject_to(
@@ -408,18 +412,32 @@ class NumOptimizer : public pq::Optimizer
                 _opti.subject_to(_a(5, i) == _I_inv(2, 0) * fx +
                                                _I_inv(2, 1) * fy +
                                                _I_inv(2, 2) * fz + l(5));
-
-                _opti.minimize(
-                  POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) -
-                                   target_x_dm(Slice(0, 3), Slice())) +
-                  ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) -
-                                   target_x_dm(Slice(3, 4), Slice())) +
-                  VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) -
-                                   target_u_dm(Slice(0, 3), Slice())) +
-                  RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) -
-                                   target_u_dm(Slice(3, 3), Slice())) +
-                  VAR_WGT * sumsqr(var));
             }
+
+            /*
+            _opti.minimize(
+              POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) -
+                                target_x_dm(Slice(0, 3), Slice())) +
+              ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) -
+                                target_x_dm(Slice(3, 4), Slice())) +
+              VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) -
+                                target_u_dm(Slice(0, 3), Slice())) +
+              RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) -
+                                target_u_dm(Slice(3, 3), Slice())) +
+              VAR_WGT * sumsqr(var));
+            */
+
+            _opti.minimize(
+              POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) -
+                               target_x_dm(Slice(0, 3), Slice())) +
+              ROT_WGT * sumsqr(1 - pow(transpose(_x(Slice(3, 4), Slice())) *
+                                         target_x_dm(Slice(3, 4), Slice()),
+                                       2)) +
+              VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) -
+                               target_u_dm(Slice(0, 3), Slice())) +
+              RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) -
+                               target_u_dm(Slice(3, 3), Slice())) +
+              VAR_WGT * sumsqr(var));
         }
         else
         {
@@ -476,17 +494,30 @@ class NumOptimizer : public pq::Optimizer
                 _opti.subject_to(_a(5, i) == _I_inv(2, 0) * fx +
                                                _I_inv(2, 1) * fy +
                                                _I_inv(2, 2) * fz);
-
-                _opti.minimize(
-                  POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) -
-                                   target_x_dm(Slice(0, 3), Slice())) +
-                  ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) -
-                                   target_x_dm(Slice(3, 4), Slice())) +
-                  VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) -
-                                   target_u_dm(Slice(0, 3), Slice())) +
-                  RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) -
-                                   target_u_dm(Slice(3, 3), Slice())));
             }
+
+            /*
+            _opti.minimize(
+              POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) -
+                                target_x_dm(Slice(0, 3), Slice())) +
+              ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) -
+                                target_x_dm(Slice(3, 4), Slice())) +
+              VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) -
+                                target_u_dm(Slice(0, 3), Slice())) +
+              RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) -
+                                target_u_dm(Slice(3, 3), Slice())));
+            */
+
+            _opti.minimize(
+              POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) -
+                               target_x_dm(Slice(0, 3), Slice())) +
+              ROT_WGT * sumsqr(1 - pow(transpose(_x(Slice(3, 4), Slice())) *
+                                         target_x_dm(Slice(3, 4), Slice()),
+                                       2)) +
+              VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) -
+                               target_u_dm(Slice(0, 3), Slice())) +
+              RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) -
+                               target_u_dm(Slice(3, 3), Slice())));
         }
 
         for (int i = 1; i < _H + 1; ++i)
@@ -573,7 +604,7 @@ class NumOptimizer : public pq::Optimizer
         opts["ipopt.print_level"] = 0;
         opts["print_time"]        = false;
         opts["ipopt.tol"]         = 1e-3;
-        // opts["ipopt.hessian_approximation"] = "limited-memory";
+        // opts["ipopt.hessian_approximation"]  = "limited-memory";
 
         // sqp
         _opti.solver("ipopt", opts);

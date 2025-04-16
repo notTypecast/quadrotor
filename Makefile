@@ -15,6 +15,9 @@ CASADI_HEADER=/usr/local/include/casadi
 CASADI_LIB=/usr/local/lib
 CASADI_FLAGS = -lcasadi -I$(CASADI_HEADER) -L$(CASADI_LIB)
 
+# Defined variable
+DEFINED =
+
 # Build target
 build-cem: main_cem.cpp
 ifeq ($(USE_TBB), true)
@@ -33,7 +36,7 @@ run-num: build/main_num
 	./build/main_num
 
 build-quad: main_quad.cpp
-	$(CXX) $(INCLUDES_NUM) main_quad.cpp -o build/main_quad $(CXXFLAGS) $(CASADI_FLAGS)
+	$(CXX) $(INCLUDES_NUM) main_quad.cpp -o build/main_quad $(CXXFLAGS) $(CASADI_FLAGS) $(DEFINED)
 
 run-quad: build/main_quad
 	./build/main_quad
