@@ -10,6 +10,10 @@ TBB_HEADER=/usr/include/tbb
 TBB_LIB=/usr/lib/x86_64-linux-gnu
 TBB_FLAGS = -ltbb -I$(TBB_HEADER) -L$(TBB_LIB)
 
+# MPI
+USE_MPI=false
+N_PROCESSES=16
+
 # Paths for CasADi
 CASADI_HEADER=/usr/local/include/casadi
 CASADI_LIB=/usr/local/lib
@@ -36,10 +40,18 @@ run-num: build/main_num
 	./build/main_num
 
 build-quad: main_quad.cpp
+ifeq ($(USE_MPI), true)
+	mpicxx $(INCLUDES_NUM) main_quad.cpp -o build/main_quad $(CXXFLAGS) $(CASADI_FLAGS) -DQUAD_WITH_MPI $(DEFINED)
+else
 	$(CXX) $(INCLUDES_NUM) main_quad.cpp -o build/main_quad $(CXXFLAGS) $(CASADI_FLAGS) $(DEFINED)
+endif
 
 run-quad: build/main_quad
+ifeq ($(USE_MPI), true)
+	mpiexec -n $(N_PROCESSES) ./build/main_quad
+else
 	./build/main_quad
+endif
 
 build-quad-pre: main_quad_pretrained.cpp
 	$(CXX) $(INCLUDES_NUM) main_quad_pretrained.cpp -o build/main_quad_pretrained $(CXXFLAGS) $(CASADI_FLAGS)

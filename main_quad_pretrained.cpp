@@ -13,21 +13,20 @@ int main()
 {
     quadrotor::Value::target << 0, 0, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 
-    symnn::Params nn_params;
-    quadrotor::Value::Param::SymNN::learned_model =
-      std::make_unique<symnn::SymNN>("src/train/models/quad_model_1_0",
-                                     nn_params);
-
-    double mass = 1;
+    double mass = 4;
 
     quadrotor::num_opt::Params params;
     params.m = mass;
     params.I =
       mass / quadrotor::Value::Constant::mass * quadrotor::Value::Constant::I;
 
-    quadrotor::num_opt::NumOptimizer optimizer(params);
+    symnn::Params nn_params;
 
-    quadrotor::Value::Param::NumOpt::use_learned     = true;
+    quadrotor::num_opt::NumOptimizer optimizer(
+      params,
+      nn_params,
+      "src/train/models/D_quad_model_4_0");
+
     quadrotor::Value::Param::Train::bad_episode_stop = false;
 
     quadrotor::train::Episode episode("src/train/data/quad.txt");

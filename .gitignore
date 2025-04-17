@@ -8,3 +8,4 @@ quad_model_*
 src/train/data/*
 src/train/models/*
 scripts/plots/*
+sample_error/*

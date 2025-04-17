@@ -203,7 +203,7 @@ struct Params
     std::vector<int>            hidden_layers;
     activation::ACTIVATION      activation  = activation::SIGMOID;
     std::function<DM(int, int)> initializer = initializers::NXavier;
-    OPTIMIZER                   optimizer   = GD;
+    OPTIMIZER                   optimizer   = ADAM;
     // Gradient-based only parameters
     int    epochs        = 1000;
     double learning_rate = 0.01;
@@ -215,8 +215,8 @@ struct Params
     double epsilon = 1e-8;
     double lambda  = 0.01;
     // Dropout parameters
-    double dropout_rate     = 0;
-    int    inference_passes = 1;
+    double dropout_rate     = 0.5;
+    int    inference_passes = 10;
 };
 
 // Fully connected NN
@@ -303,6 +303,8 @@ class SymNN
         file.close();
 
         _construct();
+
+        _trained = true;
     }
 
     Eigen::VectorXd forward(const Eigen::VectorXd &input)
@@ -370,6 +372,8 @@ class SymNN
             _train_adam(X, Y);
             break;
         }
+
+        _trained = true;
     }
 
     void reset()
@@ -395,6 +399,8 @@ class SymNN
             prev_size      = _params.hidden_layers[i];
         }
         _params.hidden_layers.pop_back();
+
+        _trained = false;
     }
 
     void save(const std::string &filename)
@@ -451,6 +457,11 @@ class SymNN
         file.close();
     }
 
+    bool trained() const
+    {
+        return _trained;
+    }
+
   protected:
     Params _params;
 
@@ -459,6 +470,8 @@ class SymNN
 
     DM  _nn_values;
     int _mask_size;
+
+    bool _trained = false;
 
     void _construct()
     {

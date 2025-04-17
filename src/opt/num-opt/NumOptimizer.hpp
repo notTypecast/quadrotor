@@ -68,20 +68,6 @@ class NumOptimizer : public pq::Optimizer
     virtual Eigen::VectorXd next(const Eigen::VectorXd &init,
                                  const Eigen::VectorXd &target)
     {
-        /*
-        if (_offset == _H)
-        {
-            _setup(init, target);
-            _offset = -1;
-        }
-        if (_offset == -1)
-        {
-            _offset = 0;
-            _forces = solve();
-        }
-
-        return _forces.col(_offset++);
-        */
         _setup(init, target);
         return solve().col(0);
     }
@@ -209,8 +195,12 @@ struct Params
 class NumOptimizer : public pq::Optimizer
 {
   public:
-    NumOptimizer(Params params)
-      : _H(params.horizon)
+    symnn::SymNN learned_model;
+
+    NumOptimizer(Params params, symnn::Params nn_params,
+                 const std::string &filename = "")
+      : learned_model(createSymNN(nn_params, filename))
+      , _H(params.horizon)
       , _dt(params.dt)
       , _m(params.m)
       , _l(params.l)
@@ -235,7 +225,7 @@ class NumOptimizer : public pq::Optimizer
         _setup(params.init, params.target);
     }
 
-    Eigen::MatrixXd solve()
+    Eigen::MatrixXd solve(int stop_col = -1)
     {
         OptiSol sol  = _opti.solve();
         _prev_result = sol.value(_c);
@@ -243,7 +233,7 @@ class NumOptimizer : public pq::Optimizer
 
         Eigen::MatrixXd C(4, _H);
 
-        for (int i = 0; i < _H; ++i)
+        for (int i = 0; i < (stop_col == -1 ? _H : stop_col); ++i)
         {
             C(0, i) = static_cast<double>(_prev_result(0, i));
             C(1, i) = static_cast<double>(_prev_result(1, i));
@@ -251,13 +241,6 @@ class NumOptimizer : public pq::Optimizer
             C(3, i) = static_cast<double>(_prev_result(3, i));
         }
 
-        /*
-        std::cout << _opti.debug().value(_x) << std::endl;
-        std::cout << _opti.debug().value(_u) << std::endl;
-        std::cout << _opti.debug().value(_a) << std::endl;
-        std::cout << _opti.debug().value(_F) << std::endl;
-        std::cout << _opti.debug().value(_c) << std::endl;
-        */
         return C;
     }
 
@@ -271,8 +254,7 @@ class NumOptimizer : public pq::Optimizer
     {
         _setup(init, target);
 
-        Eigen::VectorXd res = solve().col(0);
-        return res;
+        return solve(1).col(0);
     }
 
     virtual Eigen::VectorXd model_params()
@@ -297,6 +279,17 @@ class NumOptimizer : public pq::Optimizer
 
     bool _prev = false;
     DM   _prev_result;
+
+    static symnn::SymNN createSymNN(symnn::Params      nn_params,
+                                    const std::string &filename = "")
+    {
+        if (filename.empty())
+        {
+            return symnn::SymNN(nn_params);
+        }
+
+        return symnn::SymNN(filename, nn_params);
+    }
 
     void _setup(const Eigen::VectorXd &init, const Eigen::VectorXd &target)
     {
@@ -342,7 +335,7 @@ class NumOptimizer : public pq::Optimizer
         const double VAR_WGT =
           quadrotor::Value::Param::NumOpt::nn_variance_weight;
 
-        if (quadrotor::Value::Param::NumOpt::use_learned)
+        if (learned_model.trained())
         {
             MX var = 0;
 
@@ -351,9 +344,8 @@ class NumOptimizer : public pq::Optimizer
                 MX state =
                   vertcat(_x(Slice(), i), _u(Slice(), i), _c(Slice(), i));
                 MX l, step_var;
-                std::tie(l, step_var) =
-                  quadrotor::Value::Param::SymNN::learned_model->forward(state);
-                var += step_var;
+                std::tie(l, step_var)  = learned_model.forward(state);
+                var                   += step_var;
 
                 // THRUST
                 _opti.subject_to(
@@ -413,19 +405,6 @@ class NumOptimizer : public pq::Optimizer
                                                _I_inv(2, 1) * fy +
                                                _I_inv(2, 2) * fz + l(5));
             }
-
-            /*
-            _opti.minimize(
-              POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) -
-                                target_x_dm(Slice(0, 3), Slice())) +
-              ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) -
-                                target_x_dm(Slice(3, 4), Slice())) +
-              VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) -
-                                target_u_dm(Slice(0, 3), Slice())) +
-              RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) -
-                                target_u_dm(Slice(3, 3), Slice())) +
-              VAR_WGT * sumsqr(var));
-            */
 
             _opti.minimize(
               POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) -
@@ -495,18 +474,6 @@ class NumOptimizer : public pq::Optimizer
                                                _I_inv(2, 1) * fy +
                                                _I_inv(2, 2) * fz);
             }
-
-            /*
-            _opti.minimize(
-              POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) -
-                                target_x_dm(Slice(0, 3), Slice())) +
-              ROT_WGT * sumsqr(_x(Slice(3, 4), Slice()) -
-                                target_x_dm(Slice(3, 4), Slice())) +
-              VEL_WGT * sumsqr(_u(Slice(0, 3), Slice()) -
-                                target_u_dm(Slice(0, 3), Slice())) +
-              RVL_WGT * sumsqr(_u(Slice(3, 3), Slice()) -
-                                target_u_dm(Slice(3, 3), Slice())));
-            */
 
             _opti.minimize(
               POS_WGT * sumsqr(_x(Slice(0, 3), Slice()) -
@@ -606,7 +573,6 @@ class NumOptimizer : public pq::Optimizer
         opts["ipopt.tol"]         = 1e-3;
         // opts["ipopt.hessian_approximation"]  = "limited-memory";
 
-        // sqp
         _opti.solver("ipopt", opts);
     }
 };

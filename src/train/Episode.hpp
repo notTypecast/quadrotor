@@ -231,7 +231,8 @@ class Episode
         }
     }
 
-    Errors run(pq::Optimizer &optimizer, bool full_run = false)
+    Errors run(pq::Optimizer &optimizer, bool full_run = false,
+               bool print = true)
     {
         _stop_step = -1;
         optimizer.reinit();
@@ -240,7 +241,7 @@ class Episode
                                     quadrotor::Value::Constant::I,
                                     quadrotor::Value::Constant::length);
 
-        if (_filestream.is_open())
+        if (print && _filestream.is_open())
         {
             _filestream << "TARGET "
                         << quadrotor::Value::target.segment(0, 3).transpose()
@@ -256,14 +257,17 @@ class Episode
         {
             Eigen::VectorXd init_state = q.get_state();
 
-            if (_filestream.is_open())
+            if (print)
             {
-                _filestream << init_state.transpose() << std::endl;
-            }
-            else
-            {
-                std::cout << "Current state: " << init_state.transpose()
-                          << std::endl;
+                if (_filestream.is_open())
+                {
+                    _filestream << init_state.transpose() << std::endl;
+                }
+                else
+                {
+                    std::cout << "Current state: " << init_state.transpose()
+                              << std::endl;
+                }
             }
 
             if (!full_run && quadrotor::Value::Param::Train::bad_episode_stop &&
@@ -291,16 +295,22 @@ class Episode
                 controls = optimizer.next(init_state, quadrotor::Value::target);
                 auto elapsed =
                   std::chrono::high_resolution_clock::now() - start;
-                std::cout << "Control frequency: "
-                          << 1.0 /
-                               std::chrono::duration<double>(elapsed).count()
-                          << " Hz" << std::endl;
+                if (print)
+                {
+                    std::cout
+                      << "Control frequency: "
+                      << 1.0 / std::chrono::duration<double>(elapsed).count()
+                      << " Hz" << std::endl;
+                }
             }
             catch (std::exception &e)
             {
-                std::cout << e.what() << std::endl;
-                std::cout << "Optimization failed, stopping episode"
-                          << std::endl;
+                if (print)
+                {
+                    std::cout << e.what() << std::endl;
+                    std::cout << "Optimization failed, stopping episode"
+                              << std::endl;
+                }
                 _stop_step    = std::max(i - 2, 0);
                 errors.failed = true;
                 break;
@@ -341,7 +351,7 @@ class Episode
             _stop_step = quadrotor::Value::Param::Train::collection_steps - 1;
         }
 
-        std::cout << "Final errors: " << errors << std::endl;
+        if (print) std::cout << "Final errors: " << errors << std::endl;
 
         return errors;
     }
