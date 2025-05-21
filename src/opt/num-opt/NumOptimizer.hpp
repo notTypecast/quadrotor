@@ -31,8 +31,12 @@ struct Params
 class NumOptimizer : public pq::Optimizer
 {
   public:
-    NumOptimizer(Params params)
-      : _H(params.horizon)
+    symnn::SymNN learned_model;
+
+    NumOptimizer(Params params, symnn::Params nn_params,
+                 const std::string &filename = "")
+      : learned_model(createSymNN(nn_params, filename))
+      , _H(params.horizon)
       , _dt(params.dt)
       , _m(params.m)
       , _I(params.I)
@@ -92,6 +96,17 @@ class NumOptimizer : public pq::Optimizer
 
     DM _prev_result;
 
+    static symnn::SymNN createSymNN(symnn::Params      nn_params,
+                                    const std::string &filename = "")
+    {
+        if (filename.empty())
+        {
+            return symnn::SymNN(nn_params);
+        }
+
+        return symnn::SymNN(filename, nn_params);
+    }
+
     void _setup(const Eigen::VectorXd &init, const Eigen::VectorXd &target)
     {
         _opti = Opti();
@@ -115,15 +130,14 @@ class NumOptimizer : public pq::Optimizer
         _opti.subject_to(_u(Slice(), 0) == init_u_dm);
         // _opti.subject_to(_u(Slice(), _H) == 0);
 
-        if (pq::Value::Param::NumOpt::use_learned)
+        if (learned_model.trained())
         {
             for (int i = 0; i < _H; ++i)
             {
                 MX state =
                   vertcat(_x(Slice(), i), _u(Slice(), i), _F(Slice(), i));
                 MX l;
-                std::tie(l, std::ignore) =
-                  pq::Value::Param::SymNN::learned_model->forward(state);
+                std::tie(l, std::ignore) = learned_model.forward(state);
 
                 _opti.subject_to(_a(0, i) ==
                                  -(_F(0, i) + _F(1, i)) * sin(_x(2, i)) / _m +
@@ -329,7 +343,7 @@ class NumOptimizer : public pq::Optimizer
         //_opti.subject_to(_u(Slice(), _H) == target_u_dm);
 
         const double POS_WGT = 0.8;
-        const double ROT_WGT = 0.6;
+        const double ROT_WGT = 0.4;
         const double VEL_WGT = 0.4;
         const double RVL_WGT = 0.8;
         const double VAR_WGT =

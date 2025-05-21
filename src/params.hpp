@@ -67,39 +67,36 @@ constexpr bool use_all_data = true;
 }
 namespace NumOpt
 {
-constexpr int    target_x = 10;      // target x position
-constexpr int    target_y = 10;      // target y position
+constexpr double target_x = 4.5;     // target x position
+constexpr double target_y = 4;       // target y position
 constexpr int    horizon  = 20;      // Horizon
 constexpr double dt       = Sim::dt; // optimization time step
 constexpr double F_max    = Constant::mass * Constant::g; // maximum force
 constexpr int    prev_steps_init =
-  5;                      // number of previous steps to use for warm start
-bool use_learned = false; // whether to use learned model (false initially
-                          // because it is not trained)
+  horizon - 1;        // number of previous steps to use for warm start
+bool baseline = true; // whether to calculate baseline error with correct model
+                      // before starting runs
 }
 namespace SymNN
 {
-#ifdef NUM_OPT
-std::unique_ptr<symnn::SymNN> learned_model;
-#endif
 // Gradient-based only parameters
-constexpr int    epochs        = 2000;
-constexpr double learning_rate = 0.01;
-constexpr double momentum      = 0;
-constexpr double max_grad      = 1.0;
+constexpr int    epochs           = 2000;
+constexpr double learning_rate    = 0.01;
+constexpr double momentum         = 0;
+constexpr double max_grad         = 1.0;
+double           dropout_rate     = 0.3;
+int              inference_passes = 10;
 }
 namespace Train
 {
 constexpr bool big_angle_stop =
   true; // whether to stop training after angle values get too big
-constexpr bool big_angle_view =
-  false; // whether to keep visualizing after angle values get too big
 constexpr double big_angle_threshold =
   3 * M_PI / 8; // threshold for big angle values
 constexpr int collection_steps =
-  150; // number of steps to collect data for training (per episode)
+  200; // number of steps to collect data for training (per episode)
 constexpr int episodes = 10; // number of episodes to train
-constexpr int runs     = 5;  // number of runs to train (for averaging)
+constexpr int runs     = 32; // number of runs to train (for averaging)
 }
 }
 
@@ -135,20 +132,21 @@ constexpr double dt = 0.05;
 }
 namespace NumOpt
 {
-constexpr int    target_x           = 4;
-constexpr int    target_y           = 4;
-constexpr int    target_z           = 2;
+constexpr double target_x           = 4;
+constexpr double target_y           = 4;
+constexpr double target_z           = 2;
 constexpr int    horizon            = 8;
 constexpr double dt                 = Sim::dt;
 constexpr double control_max        = 7 * Constant::mass * Constant::g / 24;
 constexpr int    prev_steps_init    = horizon - 1;
-double           nn_variance_weight = 0;
+double           nn_variance_weight = 0.1;
+bool             baseline           = true;
 }
 namespace SymNN
 {
 constexpr bool use_all_data     = true;
 double         dropout_rate     = 0.3;
-int            inference_passes = 20;
+int            inference_passes = 10;
 }
 namespace Train
 {
@@ -157,8 +155,8 @@ constexpr double bad_episode_angle_threshold =
   1.0; // threshold for angle between World Z and Quadrotor Z axis
 constexpr double bad_episode_speed_threshold = 8.0; // threshold for speed
 constexpr int    collection_steps =
-  80; // number of steps to collect data for training (per episode)
-constexpr int episodes = 8;  // number of episodes to train
+  200; // number of steps to collect data for training (per episode)
+constexpr int episodes = 16; // number of episodes to train
 constexpr int runs     = 32; // number of runs to train (for averaging)
 }
 }

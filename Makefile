@@ -11,7 +11,7 @@ TBB_LIB=/usr/lib/x86_64-linux-gnu
 TBB_FLAGS = -ltbb -I$(TBB_HEADER) -L$(TBB_LIB)
 
 # MPI
-USE_MPI=false
+USE_MPI=true
 N_PROCESSES=16
 
 # Paths for CasADi
@@ -23,41 +23,49 @@ CASADI_FLAGS = -lcasadi -I$(CASADI_HEADER) -L$(CASADI_LIB)
 DEFINED =
 
 # Build target
-build-cem: main_cem.cpp
+build-2d-cem: main_2d_cem.cpp
 ifeq ($(USE_TBB), true)
-	$(CXX) $(INCLUDES_CEM) main_cem.cpp -o build/main_cem $(CXXFLAGS) $(TBB_FLAGS) -DUSE_TBB=true -DUSE_TBB_ONEAPI=true
+	$(CXX) $(INCLUDES_CEM) main_2d_cem.cpp -o build/main_2d_cem $(CXXFLAGS) $(TBB_FLAGS) -DUSE_TBB=true -DUSE_TBB_ONEAPI=true
 else
-	$(CXX) $(INCLUDES_CEM) main_cem.cpp -o build/main_cem $(CXXFLAGS)
+	$(CXX) $(INCLUDES_CEM) main_2d_cem.cpp -o build/main_2d_cem $(CXXFLAGS)
 endif
 
-run-cem: build/main_cem
-	./build/main_cem
+run-2d-cem: build/main_2d_cem
+	./build/main_2d_cem
 
-build-num: main_num.cpp
-	$(CXX) $(INCLUDES_NUM) main_num.cpp -o build/main_num $(CXXFLAGS) $(CASADI_FLAGS)
-
-run-num: build/main_num
-	./build/main_num
-
-build-quad: main_quad.cpp
+build-2d: main_2d.cpp
 ifeq ($(USE_MPI), true)
-	mpicxx $(INCLUDES_NUM) main_quad.cpp -o build/main_quad $(CXXFLAGS) $(CASADI_FLAGS) -DQUAD_WITH_MPI $(DEFINED)
+	mpicxx $(INCLUDES_NUM) main_2d.cpp -o build/main_2d $(CXXFLAGS) $(CASADI_FLAGS) -DQUAD_WITH_MPI $(DEFINED)
 else
-	$(CXX) $(INCLUDES_NUM) main_quad.cpp -o build/main_quad $(CXXFLAGS) $(CASADI_FLAGS) $(DEFINED)
+	$(CXX) $(INCLUDES_NUM) main_2d.cpp -o build/main_2d $(CXXFLAGS) $(CASADI_FLAGS) $(DEFINED)
 endif
 
-run-quad: build/main_quad
+run-2d: build/main_2d
 ifeq ($(USE_MPI), true)
-	mpiexec -n $(N_PROCESSES) ./build/main_quad
+	mpiexec -n $(N_PROCESSES) ./build/main_2d
 else
-	./build/main_quad
+	./build/main_2d
 endif
 
-build-quad-pre: main_quad_pretrained.cpp
-	$(CXX) $(INCLUDES_NUM) main_quad_pretrained.cpp -o build/main_quad_pretrained $(CXXFLAGS) $(CASADI_FLAGS)
+build-3d: main_3d.cpp
+ifeq ($(USE_MPI), true)
+	LD_LIBRARY_PATH=/usr/local/lib mpicxx $(INCLUDES_NUM) main_3d.cpp -o build/main_3d $(CXXFLAGS) $(CASADI_FLAGS) -DQUAD_WITH_MPI $(DEFINED)
+else
+	$(CXX) $(INCLUDES_NUM) main_3d.cpp -o build/main_3d $(CXXFLAGS) $(CASADI_FLAGS) $(DEFINED)
+endif
 
-run-quad-pre: build/main_quad_pretrained
-	./build/main_quad_pretrained
+run-3d: build/main_3d
+ifeq ($(USE_MPI), true)
+	LD_LIBRARY_PATH=/usr/local/lib mpiexec -n $(N_PROCESSES) ./build/main_3d
+else
+	./build/main_3d
+endif
+
+build-3d-pre: main_3d_pretrained.cpp
+	$(CXX) $(INCLUDES_NUM) main_3d_pretrained.cpp -o build/main_3d_pretrained $(CXXFLAGS) $(CASADI_FLAGS)
+
+run-3d-pre: build/main_3d_pretrained
+	./build/main_3d_pretrained
 
 clean:
 	rm -f build/*

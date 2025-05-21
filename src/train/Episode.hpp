@@ -19,6 +19,25 @@ namespace pq
 {
 namespace train
 {
+struct Errors
+{
+    bool   failed           = false;
+    int    steps            = 0;
+    double position         = 0.0;
+    double orientation      = 0.0;
+    double velocity         = 0.0;
+    double angular_velocity = 0.0;
+
+    friend std::ostream &operator<<(std::ostream &os, const Errors &err);
+};
+
+std::ostream &operator<<(std::ostream &os, const Errors &err)
+{
+    os << err.failed << "," << err.steps << "," << err.position << ","
+       << err.orientation << "," << err.velocity << "," << err.angular_velocity;
+    return os;
+}
+
 class Episode
 {
   public:
@@ -30,14 +49,14 @@ class Episode
           Eigen::MatrixXd(3, pq::Value::Param::Train::collection_steps);
     }
 
-    std::vector<double> run(Optimizer &optimizer, pq::sim::Visualizer &v)
+    Errors run(Optimizer &optimizer, pq::sim::Visualizer &v)
     {
         _visualize = true;
         _v         = v;
         return _run(optimizer);
     }
 
-    std::vector<double> run(Optimizer &optimizer)
+    Errors run(Optimizer &optimizer)
     {
         _visualize = false;
         return _run(optimizer);
@@ -72,7 +91,7 @@ class Episode
     bool                _visualize = false;
     pq::sim::Visualizer _v;
 
-    std::vector<double> _run(Optimizer &optimizer)
+    Errors _run(Optimizer &optimizer)
     {
         _stop_step = -1;
 
@@ -90,15 +109,18 @@ class Episode
           std::chrono::duration<double>::zero();
         auto real_start = std::chrono::high_resolution_clock::now();
 
-        // int episode_idx = (_run_iter - 1) * pq::Value::Param::Train::episodes
-        // * pq::Value::Param::Train::collection_steps + (_episode - 1) *
-        // pq::Value::Param::Train::collection_steps;
-
-        std::vector<double> errors(pq::Value::Param::Train::collection_steps,
-                                   0);
+        Errors errors;
 
         for (int i = 0; i < pq::Value::Param::Train::collection_steps; ++i)
         {
+            if (pq::Value::Param::Train::big_angle_stop &&
+                std::abs(p.get_state()[2]) >
+                  pq::Value::Param::Train::big_angle_threshold)
+            {
+                _stop_step = i;
+                break;
+            }
+
             total_time +=
               std::chrono::high_resolution_clock::now() - real_start;
             real_start = std::chrono::high_resolution_clock::now();
@@ -113,17 +135,24 @@ class Episode
 
             pq::Value::init_state = p.get_state();
 
-            auto start = std::chrono::high_resolution_clock::now();
+            Eigen::Vector2d controls;
 
-            Eigen::VectorXd controls =
-              optimizer.next(p.get_state(), pq::Value::target);
+            try
+            {
+                auto start = std::chrono::high_resolution_clock::now();
 
-            elapsed += std::chrono::high_resolution_clock::now() - start;
+                controls = optimizer.next(p.get_state(), pq::Value::target);
+
+                elapsed += std::chrono::high_resolution_clock::now() - start;
+            }
+            catch (std::exception &e)
+            {
+                _stop_step    = std::max(i - 2, 0);
+                errors.failed = true;
+                break;
+            }
 
             p.update(controls, pq::Value::Param::Sim::dt);
-            errors[i] =
-              (pq::Value::target.segment(0, 6) - p.get_state().segment(0, 6))
-                .squaredNorm();
 
             _train_input.col(i) =
               (Eigen::Vector<double, 8>() << pq::Value::init_state, controls)
@@ -134,23 +163,26 @@ class Episode
                                         controls,
                                         optimizer.model_params());
 
-            std::stringstream ss;
-            ss << std::fixed << std::setprecision(2)
-               << "Control frequency: " << control_freq
-               << " Hz, angle: " << p.get_state()[2] * 360 / M_PI
-               << " deg, time: " << p.get_sim_time() << " sec (ratio "
-               << pq::Value::Param::Sim::dt /
-                    std::chrono::duration_cast<std::chrono::duration<double>>(
-                      std::chrono::high_resolution_clock::now() - real_start)
-                      .count()
-               << "), MPC mass: " << optimizer.model_params()[0]
-               << " kg, episode: " << _episode;
-            if (_run_iter != -1)
-            {
-                ss << ", run: " << _run_iter;
-            }
             if (_visualize)
             {
+                std::stringstream ss;
+                ss << std::fixed << std::setprecision(2)
+                   << "Control frequency: " << control_freq
+                   << " Hz, angle: " << p.get_state()[2] * 360 / M_PI
+                   << " deg, time: " << p.get_sim_time() << " sec (ratio "
+                   << pq::Value::Param::Sim::dt /
+                        std::chrono::duration_cast<
+                          std::chrono::duration<double>>(
+                          std::chrono::high_resolution_clock::now() -
+                          real_start)
+                          .count()
+                   << "), MPC mass: " << optimizer.model_params()[0]
+                   << " kg, episode: " << _episode;
+                if (_run_iter != -1)
+                {
+                    ss << ", run: " << _run_iter;
+                }
+
                 _v.set_message(ss.str());
                 _v.show(p, { pq::Value::target[0], pq::Value::target[1] });
             }
@@ -163,20 +195,23 @@ class Episode
                 elapsed      = std::chrono::duration<double>::zero();
             }
 
-            if (pq::Value::Param::Train::big_angle_stop &&
-                std::abs(p.get_state()[2]) >
-                  pq::Value::Param::Train::big_angle_threshold &&
-                _stop_step == -1)
-            {
-                _stop_step = i;
-                if (!pq::Value::Param::Train::big_angle_view)
-                {
-                    break;
-                }
-            }
+            Eigen::VectorXd state = p.get_state();
+            errors.position +=
+              (pq::Value::target.segment(0, 2) - state.segment(0, 2))
+                .squaredNorm();
+            errors.orientation += std::abs(pq::Value::target(3) - state(3));
+            errors.velocity    += state.segment(3, 2).squaredNorm();
+            errors.angular_velocity += std::abs(state(5));
+
+            ++errors.steps;
         }
 
         ++_episode;
+
+        if (_stop_step == -1)
+        {
+            _stop_step = pq::Value::Param::Train::collection_steps - 1;
+        }
 
         return errors;
     }
@@ -188,24 +223,6 @@ namespace quadrotor
 {
 namespace train
 {
-struct Errors
-{
-    bool   failed           = false;
-    int    steps            = 0;
-    double position         = 0.0;
-    double orientation      = 0.0;
-    double velocity         = 0.0;
-    double angular_velocity = 0.0;
-
-    friend std::ostream &operator<<(std::ostream &os, const Errors &err);
-};
-
-std::ostream &operator<<(std::ostream &os, const Errors &err)
-{
-    os << err.failed << "," << err.steps << "," << err.position << ","
-       << err.orientation << "," << err.velocity << "," << err.angular_velocity;
-    return os;
-}
 
 class Episode
 {
@@ -231,8 +248,8 @@ class Episode
         }
     }
 
-    Errors run(pq::Optimizer &optimizer, bool full_run = false,
-               bool print = true)
+    pq::train::Errors run(pq::Optimizer &optimizer, bool full_run = false,
+                          bool print = true)
     {
         _stop_step = -1;
         optimizer.reinit();
@@ -250,7 +267,7 @@ class Episode
 
         Eigen::RowVector4d target_q_T =
           quadrotor::Value::target.segment(3, 4).transpose();
-        Errors errors;
+        pq::train::Errors errors;
 
         for (int i = 0; i < quadrotor::Value::Param::Train::collection_steps;
              ++i)
@@ -329,12 +346,10 @@ class Episode
             errors.position +=
               (quadrotor::Value::target.segment(0, 3) - q.get_position())
                 .squaredNorm();
-
             errors.orientation += std::pow(
               1 -
                 std::pow((target_q_T * q.get_orientation_vector()).value(), 2),
               2);
-
             errors.velocity +=
               (quadrotor::Value::target.segment(7, 3) - q.get_velocity())
                 .squaredNorm();

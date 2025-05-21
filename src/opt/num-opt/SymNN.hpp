@@ -219,6 +219,19 @@ struct Params
     int    inference_passes = 10;
 };
 
+const std::string layer_str(const Params &params)
+{
+    std::stringstream ss;
+    ss << params.input_size;
+    for (int i = 0; i < params.hidden_layers.size(); ++i)
+    {
+        ss << "-" << params.hidden_layers[i];
+    }
+    ss << "-" << params.output_size;
+
+    return ss.str();
+}
+
 // Fully connected NN
 class SymNN
 {

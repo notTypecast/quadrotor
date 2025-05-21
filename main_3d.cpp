@@ -17,14 +17,15 @@ MPI_Datatype error_type;
 #include "src/sim/Quadrotor.hpp"
 #include "src/train/Episode.hpp"
 
-void execute(std::string name_prefix = "", bool print = true)
+void execute(pq::train::Errors base_error, std::string name_prefix = "",
+             bool print = true)
 {
-    double masses[] = { 1, 2, 4, 6 };
+    double masses[] = { 4 };
 
     symnn::Params nn_params;
     nn_params.input_size    = 17;
     nn_params.output_size   = 6;
-    nn_params.hidden_layers = std::vector<int> { 8 };
+    nn_params.hidden_layers = std::vector<int> { 8, 4 };
     nn_params.activation    = symnn::activation::SIGMOID;
     nn_params.initializer   = symnn::initializers::NXavier;
     nn_params.optimizer     = symnn::OPTIMIZER::ADAM;
@@ -43,6 +44,7 @@ void execute(std::string name_prefix = "", bool print = true)
         opt_params.m = masses[i];
         opt_params.I = masses[i] / quadrotor::Value::Constant::mass *
                        quadrotor::Value::Constant::I;
+        opt_params.init = Eigen::Vector<double, 13>::Zero();
 
         if (print)
             std::cout << "Running with mass = " << masses[i] << std::endl;
@@ -67,7 +69,7 @@ void execute(std::string name_prefix = "", bool print = true)
         }
 #endif
 
-        std::vector<quadrotor::train::Errors> errors(
+        std::vector<pq::train::Errors> errors(
           runs * quadrotor::Value::Param::Train::episodes);
 
         for (int j = 0; j < runs; ++j)
@@ -118,26 +120,7 @@ void execute(std::string name_prefix = "", bool print = true)
                 }
 
                 optimizer.learned_model.train(train_input, train_target);
-
-                /*
-                std::cout << "NN expected:" << std::endl;
-                std::cout << episode.get_train_target()
-                               .block(0, 0, 6, episode.get_stop_step())
-                               .transpose()
-                          << std::endl;
-                std::cout << "NN actual:" << std::endl;
-                for (int l = 0; l < episode.get_stop_step(); ++l)
-                {
-                    std::cout << quadrotor::Value::Param::SymNN::learned_model
-                                   ->forward(episode.get_train_input().col(l))
-                                   .transpose()
-                              << std::endl;
-                }
-                */
             }
-
-            // std::cout << "Episode with completed training" << std::endl;
-            // episode.run(optimizer, true);
 
             optimizer.learned_model.save("src/train/models/" + name_prefix +
                                          "quad_model_" + mass_str + "_" +
@@ -145,7 +128,7 @@ void execute(std::string name_prefix = "", bool print = true)
         }
 
 #ifdef QUAD_WITH_MPI
-        std::vector<quadrotor::train::Errors> all_errors;
+        std::vector<pq::train::Errors> all_errors;
 
         if (rank == 0)
         {
@@ -164,12 +147,14 @@ void execute(std::string name_prefix = "", bool print = true)
 
         if (rank == 0)
         {
-            std::ofstream out("sample_error/" + name_prefix + "quad_error_" +
+            std::ofstream out("sample_error/" + name_prefix +
+                              symnn::layer_str(nn_params) + "_quad_error_" +
                               mass_str + ".txt");
             out << mass_str << " "
                 << quadrotor::Value::Param::Train::collection_steps << " "
                 << quadrotor::Value::Param::Train::episodes << " "
                 << runs * size << " " << std::endl;
+            out << base_error << std::endl;
             for (int j = 0; j < quadrotor::Value::Param::Train::runs; ++j)
             {
                 int run_idx = j * quadrotor::Value::Param::Train::episodes;
@@ -186,12 +171,14 @@ void execute(std::string name_prefix = "", bool print = true)
         }
 #else
 
-        std::ofstream out("sample_error/" + name_prefix + "quad_error_" +
+        std::ofstream out("sample_error/" + name_prefix +
+                          symnn::layer_str(nn_params) + "_quad_error_" +
                           mass_str + ".txt");
         out << mass_str << " "
             << quadrotor::Value::Param::Train::collection_steps << " "
             << quadrotor::Value::Param::Train::episodes << " "
             << quadrotor::Value::Param::Train::runs << " " << std::endl;
+        out << base_error << std::endl;
         for (int j = 0; j < quadrotor::Value::Param::Train::runs; ++j)
         {
             int run_idx = j * quadrotor::Value::Param::Train::episodes;
@@ -207,16 +194,33 @@ void execute(std::string name_prefix = "", bool print = true)
     }
 }
 
+pq::train::Errors baseline(bool print = false)
+{
+    quadrotor::num_opt::Params opt_params;
+    opt_params.init = Eigen::Vector<double, 13>::Zero();
+
+    symnn::Params nn_params;
+    nn_params.input_size  = 1;
+    nn_params.output_size = 1;
+
+    quadrotor::num_opt::NumOptimizer optimizer(opt_params, nn_params);
+    quadrotor::train::Episode        episode("src/train/data/quad.txt");
+
+    return episode.run(optimizer, false, print);
+}
+
 int main()
 {
+    pq::train::Errors base_error;
+
 #ifdef QUAD_WITH_MPI
     MPI_Init(NULL, NULL);
 
     int lengths[6] = { 1, 1, 1, 1, 1, 1 };
 
-    MPI_Aint                 displacements[6];
-    quadrotor::train::Errors dummy_error;
-    MPI_Aint                 base_addr;
+    MPI_Aint          displacements[6];
+    pq::train::Errors dummy_error;
+    MPI_Aint          base_addr;
     MPI_Get_address(&dummy_error, &base_addr);
     MPI_Get_address(&dummy_error.failed, &displacements[0]);
     MPI_Get_address(&dummy_error.steps, &displacements[1]);
@@ -235,26 +239,44 @@ int main()
                               MPI_DOUBLE,   MPI_DOUBLE, MPI_DOUBLE };
     MPI_Type_create_struct(6, lengths, displacements, types, &error_type);
     MPI_Type_commit(&error_type);
-#endif
 
     quadrotor::Value::target << quadrotor::Value::Param::NumOpt::target_x,
       quadrotor::Value::Param::NumOpt::target_y,
       quadrotor::Value::Param::NumOpt::target_z, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 
+    if (quadrotor::Value::Param::NumOpt::baseline)
+    {
+        int rank;
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        if (rank == 0)
+        {
+            base_error = baseline();
+        }
+    }
+#else
+    quadrotor::Value::target << quadrotor::Value::Param::NumOpt::target_x,
+      quadrotor::Value::Param::NumOpt::target_y,
+      quadrotor::Value::Param::NumOpt::target_z, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+    if (quadrotor::Value::Param::NumOpt::baseline)
+    {
+        base_error = baseline(true);
+    }
+#endif
+
 #if defined(TEST)
-    execute();
+    execute(base_error);
 #else
     // Dropout with Variance
-    execute("DV_", false);
+    // execute(base_error, "DV_", false);
 
     // Dropout without Variance
-    quadrotor::Value::Param::NumOpt::nn_variance_weight = 0.0;
-    execute("D_", false);
+    // quadrotor::Value::Param::NumOpt::nn_variance_weight = 0.0;
+    // execute(base_error, "D_", false);
 
     // No dropout
     quadrotor::Value::Param::SymNN::dropout_rate     = 0.0;
     quadrotor::Value::Param::SymNN::inference_passes = 1;
-    execute("reg_", false);
+    execute(base_error, "reg_", false);
 #endif
 
 #ifdef QUAD_WITH_MPI
