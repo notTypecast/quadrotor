@@ -227,24 +227,30 @@ namespace train
 class Episode
 {
   public:
-    Episode(const std::string &filename = "")
+    Episode(const std::string &visual_file_name = "",
+            const std::string &traj_file_name   = "")
     {
         _train_input =
           Eigen::MatrixXd(17, quadrotor::Value::Param::Train::collection_steps);
         _train_target =
           Eigen::MatrixXd(6, quadrotor::Value::Param::Train::collection_steps);
 
-        if (!filename.empty())
+        if (!visual_file_name.empty())
         {
-            _filestream = std::ofstream(filename, std::ios_base::app);
+            _vfilestream = std::ofstream(visual_file_name, std::ios_base::app);
+        }
+
+        if (!traj_file_name.empty())
+        {
+            _tfilestream = std::ofstream(traj_file_name);
         }
     }
 
     ~Episode()
     {
-        if (_filestream.is_open())
+        if (_vfilestream.is_open())
         {
-            _filestream.close();
+            _vfilestream.close();
         }
     }
 
@@ -258,11 +264,23 @@ class Episode
                                     quadrotor::Value::Constant::I,
                                     quadrotor::Value::Constant::length);
 
-        if (print && _filestream.is_open())
+        if (print && _vfilestream.is_open())
         {
-            _filestream << "TARGET "
-                        << quadrotor::Value::target.segment(0, 3).transpose()
-                        << std::endl;
+            _vfilestream << "TITLE " << "HMPC method[nl]Actual mass: "
+                         << quadrotor::Value::Constant::mass
+                         << "kg[nl]Optimizer mass: "
+                         << optimizer.model_params()(0) << "kg[nl]Episode "
+                         << _episode << std::endl;
+            //_vfilestream << "TITLE " << "No model mismatch" << std::endl;
+            _vfilestream << "TARGET "
+                         << quadrotor::Value::target.segment(0, 3).transpose()
+                         << std::endl;
+        }
+
+        if (_tfilestream.is_open())
+        {
+            _tfilestream << "episode,time,posx,posy,posz,orw,orx,ory,orz"
+                         << std::endl;
         }
 
         Eigen::RowVector4d target_q_T =
@@ -276,15 +294,26 @@ class Episode
 
             if (print)
             {
-                if (_filestream.is_open())
+                if (_vfilestream.is_open())
                 {
-                    _filestream << init_state.transpose() << std::endl;
+                    _vfilestream << init_state.transpose() << std::endl;
                 }
                 else
                 {
                     std::cout << "Current state: " << init_state.transpose()
                               << std::endl;
                 }
+            }
+
+            if (_tfilestream.is_open())
+            {
+                _tfilestream << _episode << ',';
+                _tfilestream << i * quadrotor::Value::Param::Sim::dt << ',';
+                Eigen::Vector3d pos = q.get_position();
+                _tfilestream << pos(0) << ',' << pos(1) << ',' << pos(2) << ',';
+                Eigen::Quaterniond ori = q.get_orientation();
+                _tfilestream << ori.w() << ',' << ori.x() << ',' << ori.y()
+                             << ',' << ori.z() << std::endl;
             }
 
             if (!full_run && quadrotor::Value::Param::Train::bad_episode_stop &&
@@ -368,6 +397,8 @@ class Episode
 
         if (print) std::cout << "Final errors: " << errors << std::endl;
 
+        ++_episode;
+
         return errors;
     }
 
@@ -389,10 +420,12 @@ class Episode
     }
 
   protected:
-    std::ofstream   _filestream;
+    std::ofstream   _vfilestream;
+    std::ofstream   _tfilestream;
     Eigen::MatrixXd _train_input;
     Eigen::MatrixXd _train_target;
     int             _stop_step = -1;
+    int             _episode   = 0;
 };
 }
 }

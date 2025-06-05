@@ -145,8 +145,8 @@ bool             baseline           = true;
 namespace SymNN
 {
 constexpr bool use_all_data     = true;
-double         dropout_rate     = 0.3;
-int            inference_passes = 10;
+double         dropout_rate     = 0;
+int            inference_passes = 1;
 }
 namespace Train
 {
@@ -156,8 +156,8 @@ constexpr double bad_episode_angle_threshold =
 constexpr double bad_episode_speed_threshold = 8.0; // threshold for speed
 constexpr int    collection_steps =
   200; // number of steps to collect data for training (per episode)
-constexpr int episodes = 16; // number of episodes to train
-constexpr int runs     = 32; // number of runs to train (for averaging)
+constexpr int episodes = 8; // number of episodes to train
+constexpr int runs     = 1; // number of runs to train (for averaging)
 }
 }
 

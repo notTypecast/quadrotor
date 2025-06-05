@@ -25,7 +25,7 @@ void execute(pq::train::Errors base_error, std::string name_prefix = "",
     symnn::Params nn_params;
     nn_params.input_size    = 17;
     nn_params.output_size   = 6;
-    nn_params.hidden_layers = std::vector<int> { 8, 4 };
+    nn_params.hidden_layers = std::vector<int> { 8 };
     nn_params.activation    = symnn::activation::SIGMOID;
     nn_params.initializer   = symnn::initializers::NXavier;
     nn_params.optimizer     = symnn::OPTIMIZER::ADAM;
@@ -77,7 +77,9 @@ void execute(pq::train::Errors base_error, std::string name_prefix = "",
             if (print) std::cout << "Run " << j << std::endl;
             Eigen::MatrixXd                  train_input, train_target;
             quadrotor::num_opt::NumOptimizer optimizer(opt_params, nn_params);
-            quadrotor::train::Episode        episode("src/train/data/quad.txt");
+            quadrotor::train::Episode        episode("src/train/data/quad.txt",
+                                              "trajectories/traj_" + mass_str +
+                                                ".csv");
 
             for (int k = 0; k < quadrotor::Value::Param::Train::episodes; ++k)
             {
@@ -259,7 +261,7 @@ int main()
       quadrotor::Value::Param::NumOpt::target_z, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
     if (quadrotor::Value::Param::NumOpt::baseline)
     {
-        base_error = baseline(true);
+        // base_error = baseline(true);
     }
 #endif
 

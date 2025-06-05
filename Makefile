@@ -11,7 +11,7 @@ TBB_LIB=/usr/lib/x86_64-linux-gnu
 TBB_FLAGS = -ltbb -I$(TBB_HEADER) -L$(TBB_LIB)
 
 # MPI
-USE_MPI=true
+USE_MPI=false
 N_PROCESSES=16
 
 # Paths for CasADi
