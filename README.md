@@ -1,6 +1,16 @@
 # HMPC Method
 Implementation of the HMPC (Hybrid MPC) method. A multi-layer perceptron is used to supplement a dynamic model of a system, enabling the resulting _hybrid model_ to learn via a online appoach and correct model uncertainties.
 
+## Execution Examples
+Regular MPC with a model without uncertainties:
+![0 5](https://github.com/user-attachments/assets/463c8e9a-87af-46cc-ae33-9ba96188ca88)
+
+HMPC with a slight model mismatch:
+![1](https://github.com/user-attachments/assets/73fa53aa-ecfb-4e57-bd38-3c7718f2e796)
+
+HMPC with a large model mismatch:
+![4](https://github.com/user-attachments/assets/53ce79e6-08b6-4528-81dd-103a2c2599cb)
+
 Specifically, this repository implements the following:
 * A simulator for a planar quadrotor system. The planar quadrotor (or 2D quadrotor) is a simplification of the quadrotor system for two dimensions. The simulation only includes gravity, as well as two forces acting on the PQ, one on each rotor, in the direction of the first normal of the PQ.
 * A simulator for a quadrotor system. Similarly, the simulator includes gravity, as well as the four rotor speeds. The forces and torques are calculated by multiplying specific constants $K_f$ and $K_t$ with the rotor speeds.
